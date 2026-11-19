@@ -1,11 +1,17 @@
 // API configuration for the application
 
-// Base URL for API requests
-// Flask backend runs on port 5000
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+// Primary Backend API URL (supports VITE_FASTAPI_BASE_URL, VITE_API_URL, or VITE_API_BASE_URL)
+const rawFastApiUrl = 
+  import.meta.env.VITE_FASTAPI_BASE_URL || 
+  import.meta.env.VITE_API_URL || 
+  import.meta.env.VITE_API_BASE_URL || 
+  'http://localhost:8001';
 
-// FastAPI backend runs on port 8001
-export const FASTAPI_BASE_URL = import.meta.env.VITE_FASTAPI_BASE_URL || 'http://localhost:8001';
+// Base URL for FastAPI backend (strips any trailing slash)
+export const FASTAPI_BASE_URL = rawFastApiUrl.replace(/\/+$/, '');
+
+// Base URL for legacy auxiliary Flask services (defaults to FASTAPI_BASE_URL in unified deployments)
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || FASTAPI_BASE_URL).replace(/\/+$/, '');
 
 // API endpoints
 export const API_ENDPOINTS = {

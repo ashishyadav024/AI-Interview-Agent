@@ -92,11 +92,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+        "origins": "*",
         "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
         "allow_headers": ["Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin", "X-User-Role", "*"],
         "expose_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True,
         "max_age": 3600
     }
 })
