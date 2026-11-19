@@ -1,0 +1,50 @@
+[
+  {
+    "job_id": "54fb8a83-8615-4558-9570-c7a58f8714ba",
+    "title": "Job Posting - 2026-11-19 17:57",
+    "description": "Looking for a React developer",
+    "requirements": [],
+    "skills_required": [],
+    "experience_min": 0,
+    "experience_max": 10,
+    "location": null,
+    "salary_min": null,
+    "salary_max": null,
+    "company": null,
+    "created_by": null,
+    "threshold": 0.5,
+    "created_at": "2026-11-19 12:27:23.262486",
+    "updated_at": "2026-11-19 12:27:23.262544",
+    "status": "active",
+    "statistics": {
+      "total_applications": 0,
+      "selected_count": 0,
+      "rejected_count": 0
+    },
+    "_id": "35bb19d0-3816-48e1-92bd-197f93777a32"
+  },
+  {
+    "job_id": "f3ba2cee-797e-46f2-bd8a-4af7ba7f765b",
+    "title": "Job Posting - 2026-11-19 18:00",
+    "description": "React developer",
+    "requirements": [],
+    "skills_required": [],
+    "experience_min": 0,
+    "experience_max": 10,
+    "location": null,
+    "salary_min": null,
+    "salary_max": null,
+    "company": null,
+    "created_by": null,
+    "threshold": 0.5,
+    "created_at": "2026-11-19 12:30:57.305420",
+    "updated_at": "2026-11-19 12:30:57.305424",
+    "status": "active",
+    "statistics": {
+      "total_applications": 0,
+      "selected_count": 0,
+      "rejected_count": 0
+    },
+    "_id": "675625fe-eca8-491f-8342-e14a4494cc3a"
+  }
+]

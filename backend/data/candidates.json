@@ -1,0 +1,426 @@
+[
+  {
+    "id": "cand-1",
+    "name": "Aarav Sharma",
+    "email": "aarav.sharma@example.com",
+    "role": "Senior Frontend Engineer",
+    "job_id": "job-fe-01",
+    "interview_type": "AI Async",
+    "status": "Shortlisted",
+    "score": 88,
+    "verdict": "Recommended",
+    "completed_at": "Today, 10:30 AM",
+    "scheduled_time": null,
+    "skills": [
+      "React",
+      "TypeScript",
+      "Next.js",
+      "State Architecture",
+      "Tailwind CSS"
+    ],
+    "tab_switches": 0,
+    "flags": [],
+    "recording_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    "resume_text": "Aarav Sharma. 5+ years experience building large-scale frontend applications, component design systems, and state architectures using React and TypeScript.",
+    "organization": "default_org",
+    "created_at": "2026-11-19T05:00:00Z",
+    "updated_at": "2026-11-19T05:00:00Z",
+    "avatar_bg": "bg-emerald-50 text-emerald-700",
+    "initials": "AS",
+    "report": {
+      "recommendation": "Recommended",
+      "scores": {
+        "overall": 88,
+        "technical": 91,
+        "problem_solving": 86,
+        "communication": 89,
+        "cultural_fit": 85
+      },
+      "summary": "Candidate demonstrated exceptional mastery of React architecture, concurrent rendering, and custom hooks. Articulated trade-offs with high verbal clarity and precision.",
+      "key_strengths": [
+        "Deep knowledge of React concurrent rendering and state architecture",
+        "Strong TypeScript typing hygiene and interface contracts",
+        "Clear system-level trade-off analysis during technical questioning"
+      ],
+      "areas_for_improvement": [
+        "Could explore WebAssembly optimizations for client-side compute-heavy workloads",
+        "Deepen familiarity with edge middleware caching strategies"
+      ],
+      "interview_date": "11/19/2026",
+      "duration_minutes": 18,
+      "total_questions": 8
+    },
+    "conversation_history": [
+      {
+        "question_number": 1,
+        "question": "Can you walk us through how you structure global state and custom hooks for an enterprise React dashboard?",
+        "answer": "I prefer separating server cache from client UI state. For server state we use TanStack Query with optimistic updates, while for shared client state we use Zustand stores divided by domain. Custom hooks encapsulate all side effects and business logic.",
+        "evaluation": {
+          "score_0_10": 9.2,
+          "depth": "Advanced",
+          "correctness": "Accurate",
+          "clarity": "High",
+          "strengths": [
+            "Clear separation of server cache vs UI state",
+            "Modular Zustand store design"
+          ],
+          "gaps": []
+        }
+      },
+      {
+        "question_number": 2,
+        "question": "How do you detect and optimize unnecessary re-renders in complex React tree structures?",
+        "answer": "I profile with React DevTools profiler to identify wasted render cycles, isolate volatile states down the component subtree, and use React.memo, useMemo, and useCallback intentionally with stable dependency arrays.",
+        "evaluation": {
+          "score_0_10": 8.8,
+          "depth": "Comprehensive",
+          "correctness": "Accurate",
+          "clarity": "High",
+          "strengths": [
+            "Practical profiling methodology",
+            "Targeted state colocation"
+          ],
+          "gaps": []
+        }
+      }
+    ]
+  },
+  {
+    "id": "cand-2",
+    "name": "Priya Mehta",
+    "email": "priya.m@techstudio.dev",
+    "role": "Full Stack Engineer",
+    "job_id": "job-fs-02",
+    "interview_type": "AI Async",
+    "status": "Completed",
+    "score": 76,
+    "verdict": "Recommended",
+    "completed_at": "Today, 09:15 AM",
+    "scheduled_time": null,
+    "skills": [
+      "Java",
+      "Spring Boot",
+      "Angular",
+      "PostgreSQL",
+      "REST APIs"
+    ],
+    "tab_switches": 0,
+    "flags": [],
+    "recording_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+    "resume_text": "Priya Mehta. Full Stack Engineer with 4 years building enterprise applications using Spring Boot microservices, Angular frontend, and relational databases.",
+    "organization": "default_org",
+    "created_at": "2026-11-19T03:30:00Z",
+    "updated_at": "2026-11-19T03:30:00Z",
+    "avatar_bg": "bg-blue-50 text-blue-700",
+    "initials": "PM",
+    "report": {
+      "recommendation": "Recommended",
+      "scores": {
+        "overall": 76,
+        "technical": 78,
+        "problem_solving": 75,
+        "communication": 76,
+        "cultural_fit": 75
+      },
+      "summary": "Solid backend fundamentals in Spring Boot REST controllers, ORM entity mappings, and relational database indexing. Good foundational knowledge of Angular component lifecycle.",
+      "key_strengths": [
+        "Strong understanding of PostgreSQL indexing and query joins",
+        "Proficient in Spring Boot dependency injection and modular service layering",
+        "Clear verbal articulation on API contract design"
+      ],
+      "areas_for_improvement": [
+        "Could deepen familiarity with microservice resilience patterns (e.g. circuit breakers, Kafka retries)",
+        "Expand on Angular state management patterns (Signals / NgRx)"
+      ],
+      "interview_date": "11/19/2026",
+      "duration_minutes": 15,
+      "total_questions": 8
+    },
+    "conversation_history": [
+      {
+        "question_number": 1,
+        "question": "Can you explain how you designed your Spring Boot and PostgreSQL backend for the spend tracker project?",
+        "answer": "I structured it into Controller, Service, and Repository layers using Spring Data JPA. We defined entity relationships for Users, Categories, and Expenses with foreign keys, and added B-Tree indexes on user_id and transaction_date for fast query aggregation.",
+        "evaluation": {
+          "score_0_10": 7.8,
+          "depth": "Intermediate",
+          "correctness": "Accurate",
+          "clarity": "High",
+          "strengths": [
+            "Layered architectural discipline",
+            "Appropriate index selection"
+          ],
+          "gaps": []
+        }
+      }
+    ]
+  },
+  {
+    "id": "cand-3",
+    "name": "Kabir Malhotra",
+    "email": "kabir.m@neural.network",
+    "role": "Backend Systems Engineer",
+    "job_id": "job-be-03",
+    "interview_type": "AI Async",
+    "status": "Pending Review",
+    "score": 72,
+    "verdict": "Review Needed",
+    "completed_at": "Yesterday, 04:30 PM",
+    "scheduled_time": null,
+    "skills": [
+      "Node.js",
+      "Python",
+      "PostgreSQL",
+      "Redis",
+      "Distributed Systems"
+    ],
+    "tab_switches": 1,
+    "flags": [
+      {
+        "type": "long silence",
+        "reason": "Extended silence detected before answering technical architecture prompt",
+        "time": "Yesterday, 04:38 PM"
+      }
+    ],
+    "recording_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+    "resume_text": "Kabir Malhotra. Backend engineer focused on high-throughput asynchronous services, caching topologies, and PostgreSQL optimizations.",
+    "organization": "default_org",
+    "created_at": "2026-11-18T11:00:00Z",
+    "updated_at": "2026-11-18T11:00:00Z",
+    "avatar_bg": "bg-amber-50 text-amber-700",
+    "initials": "KM",
+    "report": {
+      "recommendation": "Under Consideration",
+      "scores": {
+        "overall": 72,
+        "technical": 74,
+        "problem_solving": 70,
+        "communication": 71,
+        "cultural_fit": 73
+      },
+      "summary": "Good grasp of Node.js event loop, asynchronous IO, and Redis caching layers. Took notable hesitation on distributed locking and consensus protocols, requiring manual reviewer sign-off.",
+      "key_strengths": [
+        "Practical understanding of Redis key eviction and caching strategies",
+        "Clean schema design for relational databases",
+        "Honest self-awareness about edge-case limitations"
+      ],
+      "areas_for_improvement": [
+        "Distributed transactions (2PC / Saga pattern)",
+        "Confidence during unscripted system scaling scenarios"
+      ],
+      "interview_date": "11/18/2026",
+      "duration_minutes": 16,
+      "total_questions": 8
+    }
+  },
+  {
+    "id": "cand-4",
+    "name": "Ananya Singh",
+    "email": "ananya.s@analytics.org",
+    "role": "Machine Learning Engineer",
+    "job_id": "job-mle-04",
+    "interview_type": "AI Async",
+    "status": "Shortlisted",
+    "score": 92,
+    "verdict": "Recommended",
+    "completed_at": "Yesterday, 11:20 AM",
+    "scheduled_time": null,
+    "skills": [
+      "Python",
+      "PyTorch",
+      "Transformers",
+      "FastAPI",
+      "Vector DBs"
+    ],
+    "tab_switches": 0,
+    "flags": [],
+    "recording_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+    "resume_text": "Ananya Singh. ML Engineer specializing in generative AI workflows, RAG architectures, model quantization, and production inference serving.",
+    "organization": "default_org",
+    "created_at": "2026-11-18T05:50:00Z",
+    "updated_at": "2026-11-18T05:50:00Z",
+    "avatar_bg": "bg-purple-50 text-purple-700",
+    "initials": "AS",
+    "report": {
+      "recommendation": "Recommended",
+      "scores": {
+        "overall": 92,
+        "technical": 95,
+        "problem_solving": 92,
+        "communication": 90,
+        "cultural_fit": 91
+      },
+      "summary": "Exceptional performance. Articulated fine-tuning vs RAG trade-offs, vector similarity search indexes (HNSW, IVFFlat), and quantization strategies (LoRA, QLoRA) with stellar technical precision.",
+      "key_strengths": [
+        "Command over LLM deployment pipelines and latency optimization",
+        "Rigorous statistical and mathematical foundation",
+        "Concise, articulate verbal explanations with real production insights"
+      ],
+      "areas_for_improvement": [
+        "Could gain more experience with multi-modal tensor streaming architectures"
+      ],
+      "interview_date": "11/18/2026",
+      "duration_minutes": 20,
+      "total_questions": 8
+    }
+  },
+  {
+    "id": "cand-5",
+    "name": "Devina Roy",
+    "email": "devina.roy@cloudsystems.net",
+    "role": "Data Engineer",
+    "job_id": "job-de-05",
+    "interview_type": "AI Async",
+    "status": "Completed",
+    "score": 81,
+    "verdict": "Recommended",
+    "completed_at": "2 days ago",
+    "scheduled_time": null,
+    "skills": [
+      "Apache Spark",
+      "SQL",
+      "Airflow",
+      "Kafka",
+      "Snowflake"
+    ],
+    "tab_switches": 0,
+    "flags": [],
+    "recording_url": null,
+    "resume_text": "Devina Roy. Data Engineer with 4+ years designing high-volume data pipelines, real-time Kafka event streaming, and analytical warehouses.",
+    "organization": "default_org",
+    "created_at": "2026-11-17T09:00:00Z",
+    "updated_at": "2026-11-17T09:00:00Z",
+    "avatar_bg": "bg-cyan-50 text-cyan-700",
+    "initials": "DR",
+    "report": {
+      "recommendation": "Recommended",
+      "scores": {
+        "overall": 81,
+        "technical": 83,
+        "problem_solving": 80,
+        "communication": 82,
+        "cultural_fit": 79
+      },
+      "summary": "Strong experience in designing resilient ETL/ELT pipelines, streaming data ingestion using Kafka, and batch transformations using PySpark.",
+      "key_strengths": [
+        "Deep knowledge of data warehouse partitioning and clustering",
+        "Robust DAG construction and dependency management in Airflow"
+      ],
+      "areas_for_improvement": [
+        "Expand on modern Iceberg/Delta Lake ACID transaction semantics"
+      ],
+      "interview_date": "11/17/2026",
+      "duration_minutes": 16,
+      "total_questions": 8
+    }
+  },
+  {
+    "id": "cand-6",
+    "name": "Rohan Verma",
+    "email": "rohan.v@cloudscale.io",
+    "role": "Cloud & DevOps Engineer",
+    "job_id": "job-devops-06",
+    "interview_type": "Live Video",
+    "status": "Scheduled",
+    "score": 0,
+    "verdict": "Under Consideration",
+    "completed_at": "Tomorrow, 11:00 AM",
+    "scheduled_time": "Tomorrow, 11:00 AM",
+    "skills": [
+      "Docker",
+      "Kubernetes",
+      "Terraform",
+      "AWS",
+      "CI/CD"
+    ],
+    "tab_switches": 0,
+    "flags": [],
+    "recording_url": null,
+    "resume_text": "Rohan Verma. Systems & DevOps engineer focused on container orchestration, Infrastructure as Code using Terraform, and GitOps pipelines.",
+    "organization": "default_org",
+    "created_at": "2026-11-19T01:00:00Z",
+    "updated_at": "2026-11-19T01:00:00Z",
+    "avatar_bg": "bg-indigo-50 text-indigo-700",
+    "initials": "RV",
+    "report": null
+  },
+  {
+    "id": "cand-0836cdfb",
+    "name": "Portfolio\nEducation",
+    "email": "peemail@gmail.com",
+    "role": "Machine Learning Engineer",
+    "job_id": "job-machine-le",
+    "interview_type": "AI Async",
+    "status": "Screened",
+    "score": 9,
+    "verdict": "Review Needed",
+    "completed_at": "Just now",
+    "scheduled_time": null,
+    "skills": [
+      "Software Engineering",
+      "Problem Solving"
+    ],
+    "tab_switches": 0,
+    "flags": [],
+    "recording_url": null,
+    "resume_text": "ABC XYZ\nGhaziabad, Uttar Pradesh\n\u2642phone1234567890 /envel\u2322peemail@gmail.com /linkedinlinkedin.com/in/username /githubgithub.com/username\n/gl\u2322bePortfolio\nEducation\nB.Tech in ECE (AKTU) Nov 2022 \u2013 July 2026\nABES Engineering College CGPA-7.0\nClass 12th (CBSE) 2022\nCh. Chhabil Dass Public School 76.2%\nClass 10th (CBSE) 2020\nCh. Chhabil Dass Public School 92.6%\nTechnical Skills\nDeveloper Tools : Arduino IDE, BLYNK IOT, Firebase, MATLAB, Proteus, LT Spice\nSkills : Embedded Programming & Firmware, Hardware Integration, C language, Circuit simulation\nInternships\nHumble Bee @ Buzzworthy March 2025 \u2013 Present\nEmbedded Intern Hybrid\n\u2013Developing real-time signal processing solutions using ESP32 for embedded applications\n\u2013Implementing audio signal acquisition and preprocessing using ADC and filtering techniques\nlvlAlpha Private Limited Dec 2023 \u2013 Feb 2024\nEEE System Design Associate Remote\n\u2013Assisted in TTMS Tool and Asset Tracking system Preliminary Technical Documentation\n\u2013Worked on the New Product Development - \u201cArch Eon and Had Eon\u201d Wearable Health Monitors\n\u2013Built Vendor Management and Development for lvlAlpha Manufacturing Process\nProjects\nARDUMIST (Portable Humidifier) May 2024\n\u2013Developed a portable humidifier using an Arduino UNO microcontroller to maintain room humidity levels above 75%\n\u2013Integrated a DHT sensor for real-time humidity monitoring and an ultrasonic vibration mechanism for water spray\nWeather Monitor Jan 2024\n\u2013Designed an IoT weather station that monitors room temperature and humidity using precision sensors\n\u2013Utilized Blynk IoT platform to stream data to a mobile app\nAutomatic Plant Irrigation System Feb 2024\n\u2013Developed an automated irrigation system using Arduino to measure soil moisture via analog sensors\n\u2013Implemented threshold-based algorithms to trigger a water pump when soil moisture drops below set level\nAchievement\nGATE 2025\nQualified in Electronics & Communication\nCertificates\nThe Complete Python Developer Oct 2023-Nov 2023\nUdemy\nVLSI for Beginners Jan 2024- Feb 2024\nNIELT, Calicut\nExtracurricular\nLight De Literacy (NGO Initiative) Dec 2022 \u2013 Present\nCamp Coordinator\n\u2013Educating 50+ underprivileged students in slum areas on STEM subjects, emphasizing basic electronics.\nUnstop Igniters Club Oct 2023 \u2013 Oct 2024\nTechnical Member\n\u2013Organized events such as WEB BATTLE, showcasing technical challenges and electronics projects.\n",
+    "organization": "default_org",
+    "created_at": "2026-11-19T17:29:38.899113",
+    "updated_at": "2026-11-19T18:12:39.083117",
+    "avatar_bg": "bg-blue-50 text-blue-700",
+    "initials": "PE",
+    "report": {
+      "recommendation": "Review Needed",
+      "scores": {
+        "overall": 9,
+        "technical": 9,
+        "problem_solving": 9,
+        "communication": 75,
+        "cultural_fit": 75
+      },
+      "summary": "Automated AI resume screening for Machine Learning Engineer. Candidate match score: 9%.",
+      "key_strengths": [
+        "Unable to generate strengths"
+      ],
+      "areas_for_improvement": [
+        "Unable to generate recommendations"
+      ],
+      "interview_date": "2026-11-19",
+      "duration_minutes": 0,
+      "total_questions": 0
+    },
+    "_id": "a678e6d9-b280-4f3c-99d5-f702882c020f",
+    "rejection_reason": "Bulk rejection from recruiter dashboard"
+  },
+  {
+    "id": "int-9c4c46cb",
+    "name": "ashish",
+    "email": "ashsihyadav372005123@gmail.com",
+    "role": "full stack",
+    "job_id": "job-full-stack",
+    "interview_type": "AI Async",
+    "status": "In Progress",
+    "score": 0,
+    "verdict": "Under Consideration",
+    "flags": [],
+    "tab_switches": 0,
+    "started_at": "2026-11-19T19:05:06.156633",
+    "completed_at": null,
+    "scheduled_time": null,
+    "recording_url": null,
+    "report": null,
+    "organization": "default_org",
+    "skills": [
+      "Full Stack",
+      "Problem Solving",
+      "System Architecture"
+    ],
+    "avatar_bg": "bg-[var(--primary-soft)] text-[var(--primary)]",
+    "initials": "A",
+    "resume_text": "Interview session for full stack. Candidate: ashish.",
+    "conversation_history": [],
+    "created_at": "2026-11-19T19:05:06.156633",
+    "updated_at": "2026-11-19T19:05:06.156633",
+    "_id": "78c8f8bd-38fc-4adb-a6d4-20a18a398484"
+  }
+]
