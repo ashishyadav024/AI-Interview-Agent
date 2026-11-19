@@ -3,14 +3,23 @@
 > **Autonomous Video Screening, Adaptive Technical Assessment & Recruiter Intelligence Platform**  
 > GitHub Repository: [https://github.com/ashishyadav024/AI-Interview-Agent](https://github.com/ashishyadav024/AI-Interview-Agent)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Live Frontend](https://img.shields.io/badge/Live%20Demo-Vercel-black?logo=vercel)](https://ai-interview-agent-three-taupe.vercel.app)
+[![Live Backend](https://img.shields.io/badge/Live%20API-Render-46E3B7?logo=render&logoColor=black)](https://ai-interview-agent-n4bf.onrender.com)
+[![API Docs](https://img.shields.io/badge/Swagger-Docs-85EA2D?logo=swagger&logoColor=black)](https://ai-interview-agent-n4bf.onrender.com/docs)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB.svg?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React 18](https://img.shields.io/badge/React-18.3-61DAFB.svg?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
 [![Groq LLaMA 3.3](https://img.shields.io/badge/LLM-Groq%20LLaMA%203.3%2070B-F05032.svg)](https://groq.com)
-[![Vite](https://img.shields.io/badge/Bundler-Vite-646CFF.svg?logo=vite&logoColor=white)](https://vitejs.dev)
+
+---
+
+## 🌐 Live Deployments
+
+- **Web Application (Frontend)**: [https://ai-interview-agent-three-taupe.vercel.app](https://ai-interview-agent-three-taupe.vercel.app)
+- **REST API Backend**: [https://ai-interview-agent-n4bf.onrender.com](https://ai-interview-agent-n4bf.onrender.com)
+- **Interactive Swagger Documentation**: [https://ai-interview-agent-n4bf.onrender.com/docs](https://ai-interview-agent-n4bf.onrender.com/docs)
+- **Health Check Endpoint**: [https://ai-interview-agent-n4bf.onrender.com/health](https://ai-interview-agent-n4bf.onrender.com/health)
 
 ---
 
