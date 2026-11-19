@@ -24,35 +24,48 @@ class MeetSessionRepository:
     """MongoDB repository for Meet recording sessions"""
     
     def __init__(self):
-        """Initialize MongoDB connection"""
-        # Try MONGODB_URI first, then fall back to MONGO_URI for compatibility
+        """Initialize MongoDB connection with graceful fallback"""
         mongo_uri = os.getenv("MONGODB_URI") or os.getenv("MONGO_URI")
         if not mongo_uri:
-            raise ValueError("MONGODB_URI or MONGO_URI not found in environment variables")
+            logger.warning("⚠️ MONGODB_URI or MONGO_URI not found. MeetSessionRepository running in mock mode.")
+            self.client = None
+            self.db = None
+            self.sessions_collection = None
+            self.transcripts_collection = None
+            self.audio_chunks_collection = None
+            return
         
-        # Configure MongoDB client with proper timeout settings for Atlas
-        self.client = MongoClient(
-            mongo_uri,
-            serverSelectionTimeoutMS=1500,  # 1.5 seconds fail-fast
-            connectTimeoutMS=1500,  # 1.5 seconds fail-fast
-            socketTimeoutMS=5000,
-            maxPoolSize=50,
-            retryWrites=True,
-            retryReads=True
-        )
-        # Use database name from environment or default
-        db_name = os.getenv("MONGO_DB_NAME", "resumate")
-        self.db = self.client.get_database(db_name)
-        
-        # Collections
-        self.sessions_collection = self.db.get_collection("meet_sessions")
-        self.transcripts_collection = self.db.get_collection("meet_transcripts")
-        self.audio_chunks_collection = self.db.get_collection("meet_audio_chunks")
-        
-        # Create indexes
-        self._create_indexes()
-        
-        logger.info("✅ Meet Session Repository initialized")
+        try:
+            # Configure MongoDB client with proper timeout settings for Atlas
+            self.client = MongoClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=1500,  # 1.5 seconds fail-fast
+                connectTimeoutMS=1500,  # 1.5 seconds fail-fast
+                socketTimeoutMS=5000,
+                maxPoolSize=50,
+                retryWrites=True,
+                retryReads=True
+            )
+            # Use database name from environment or default
+            db_name = os.getenv("MONGO_DB_NAME", "resumate")
+            self.db = self.client.get_database(db_name)
+            
+            # Collections
+            self.sessions_collection = self.db.get_collection("meet_sessions")
+            self.transcripts_collection = self.db.get_collection("meet_transcripts")
+            self.audio_chunks_collection = self.db.get_collection("meet_audio_chunks")
+            
+            # Create indexes
+            self._create_indexes()
+            
+            logger.info("✅ Meet Session Repository initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Meet Session Repository connection failed: {e}. Fallback enabled.")
+            self.client = None
+            self.db = None
+            self.sessions_collection = None
+            self.transcripts_collection = None
+            self.audio_chunks_collection = None
     
     def _create_indexes(self):
         """Create database indexes for efficient querying"""

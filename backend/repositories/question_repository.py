@@ -24,29 +24,38 @@ class QuestionRepository:
     """MongoDB repository for interview questions"""
     
     def __init__(self):
-        """Initialize MongoDB connection"""
-        # Try MONGODB_URI first, then fall back to MONGO_URI for compatibility
+        """Initialize MongoDB connection with graceful fallback"""
         mongo_uri = os.getenv("MONGODB_URI") or os.getenv("MONGO_URI")
         if not mongo_uri:
-            raise ValueError("MONGODB_URI or MONGO_URI not found in environment variables")
+            logger.warning("⚠️ MONGODB_URI or MONGO_URI not found. QuestionRepository running in mock mode.")
+            self.client = None
+            self.db = None
+            self.questions_collection = None
+            return
         
-        # Configure MongoDB client with proper timeout settings for Atlas
-        self.client = MongoClient(
-            mongo_uri,
-            serverSelectionTimeoutMS=1500,  # 1.5 seconds fail-fast
-            connectTimeoutMS=1500,  # 1.5 seconds fail-fast
-            socketTimeoutMS=5000,
-            maxPoolSize=50,
-            retryWrites=True,
-            retryReads=True
-        )
-        # Use database name from environment or default
-        db_name = os.getenv("MONGO_DB_NAME", "resumate")
-        self.db = self.client.get_database(db_name)
-        self.questions_collection = self.db.get_collection("interview_questions")
-        
-        # Create indexes
-        self._create_indexes()
+        try:
+            # Configure MongoDB client with proper timeout settings for Atlas
+            self.client = MongoClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=1500,  # 1.5 seconds fail-fast
+                connectTimeoutMS=1500,  # 1.5 seconds fail-fast
+                socketTimeoutMS=5000,
+                maxPoolSize=50,
+                retryWrites=True,
+                retryReads=True
+            )
+            # Use database name from environment or default
+            db_name = os.getenv("MONGO_DB_NAME", "resumate")
+            self.db = self.client.get_database(db_name)
+            self.questions_collection = self.db.get_collection("interview_questions")
+            
+            # Create indexes
+            self._create_indexes()
+        except Exception as e:
+            logger.warning(f"⚠️ QuestionRepository MongoDB connection failed: {e}. Fallback enabled.")
+            self.client = None
+            self.db = None
+            self.questions_collection = None
         
         logger.info("✅ Question Repository initialized")
     

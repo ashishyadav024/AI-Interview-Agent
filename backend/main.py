@@ -3712,8 +3712,13 @@ from repositories.meet_session_repository import MeetSessionRepository
 import subprocess
 import uuid as uuid_lib
 
-# Initialize Meet Session Repository
-meet_session_repo = MeetSessionRepository()
+# Initialize Meet Session Repository with safe fallback
+try:
+    meet_session_repo = MeetSessionRepository()
+    logger.info("✅ MeetSessionRepository initialized successfully")
+except Exception as e:
+    logger.warning(f"⚠️ MeetSessionRepository initialization skipped: {e}")
+    meet_session_repo = None
 
 async def _run_meet_bot_agent(session_config: dict, session_id: str, repo: MeetSessionRepository):
     """Background task to run Meet Bot LangGraph agent"""
