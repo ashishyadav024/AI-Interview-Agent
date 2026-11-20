@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
         if groq_api_key and not groq_api_key.startswith("gsk_placeholder"):
             client = Groq(api_key=groq_api_key, timeout=3.0)
             preferred_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-            candidate_models = [preferred_model, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+            candidate_models = [preferred_model, "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
             verified_model = None
             last_err = None
             for m in candidate_models:

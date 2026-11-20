@@ -453,5 +453,223 @@
     "created_at": "2026-11-20T05:11:14.689208",
     "updated_at": "2026-11-20T05:11:14.689208",
     "_id": "3de44fe0-56be-42dd-9ff9-f8c7f1a2cf65"
+  },
+  {
+    "id": "int-9513ae93",
+    "name": "Demo Candidate",
+    "email": "demo.recruiter@example.com",
+    "role": "Full Stack Developer (Demo Sandbox)",
+    "job_id": "job-full-stack-d",
+    "interview_type": "AI Async",
+    "status": "In Progress",
+    "score": 0,
+    "verdict": "Not Recommended",
+    "flags": [],
+    "tab_switches": 0,
+    "started_at": "2026-11-20T08:35:48.980023",
+    "completed_at": "2026-11-20T08:28:30.708541",
+    "scheduled_time": null,
+    "recording_url": null,
+    "report": {
+      "report_id": "rep-b986aa7e",
+      "interview_id": "int-88255679",
+      "session_id": "cf0cf573-f27a-41f2-b34d-f8ce4fef5fa0",
+      "candidate_name": "Demo Candidate",
+      "candidate_email": "demo.recruiter@example.com",
+      "job_title": "Full Stack Developer (Demo Sandbox)",
+      "interview_date": "2026-11-20",
+      "total_questions": 4,
+      "duration_minutes": 15,
+      "scores": {
+        "overall": 0,
+        "technical": 0,
+        "communication": 0,
+        "problem_solving": 0,
+        "cultural_fit": 0
+      },
+      "recommendation": "Not Recommended",
+      "summary": "The candidate was unable to provide intelligible responses to any of the interview questions. All answers were garbled or off\u2011topic, preventing any assessment of technical knowledge, problem\u2011solving ability, or communication skills. Consequently, there is no evidence of fit for the Full Stack Developer role.",
+      "key_strengths": [],
+      "areas_for_improvement": [
+        "Communicate clearly and respond to prompts",
+        "Demonstrate technical knowledge of full\u2011stack technologies"
+      ],
+      "questions_summary": [
+        {
+          "question_number": 1,
+          "question": "Hi Demo, thanks for joining us for the Full Stack Developer interview. Could you share a quick overview of your experience building full\u2011stack applications, especially with React, Node.js, and TypeScript?",
+          "stage": "intro",
+          "answer": ",ffmmr,mfr,mf,rf",
+          "score": 0,
+          "feedback": "The candidate provided an unintelligible response that does not address the question. This indicates a potential technical issue with the audio input or a failure to engage with the interview."
+        },
+        {
+          "question_number": 2,
+          "question": "It seems there was a glitch with your previous response. Could you please try answering the question again about your full-stack experience?",
+          "stage": "technical",
+          "answer": "reettethh hh h",
+          "score": 0,
+          "feedback": "The candidate provided an unintelligible response, likely due to a technical issue or lack of engagement, making it impossible to assess technical skills."
+        },
+        {
+          "question_number": 3,
+          "question": "Let's try a specific technical question to ensure we are connected. Can you explain the difference between a Promise and an Async function in JavaScript?",
+          "stage": "technical",
+          "answer": "nfjfjnfjfnjfnjf",
+          "score": 0,
+          "feedback": "The candidate provided no substantive answer, likely due to a technical connection issue or input error."
+        },
+        {
+          "question_number": 4,
+          "question": "I'm not receiving any clear audio or text from you. Can you please confirm you are connected and ready to speak?",
+          "stage": "technical",
+          "answer": "pata nahii kya hai answer",
+          "score": 0,
+          "feedback": "The candidate provided an incoherent response in Hindi ('I don't know what the answer is') instead of confirming connection or answering the technical prompt. This indicates a complete failure to engage with the interview process or a significant communication barrier."
+        }
+      ],
+      "closing_message": "Thank you, Demo Candidate, for your time; we appreciate your effort despite the technical difficulties during the interview."
+    },
+    "organization": "default_org",
+    "skills": [
+      "React",
+      "Node.js",
+      "System Architecture",
+      "TypeScript"
+    ],
+    "avatar_bg": "bg-[var(--primary-soft)] text-[var(--primary)]",
+    "initials": "DC",
+    "resume_text": "Interview session for Full Stack Developer (Demo Sandbox). Candidate: Demo Candidate.",
+    "conversation_history": [
+      {
+        "question_number": 2,
+        "question": "Hi Demo, thanks for joining us for the Full Stack Developer interview. Could you share a quick overview of your experience building full\u2011stack applications, especially with React, Node.js, and TypeScript?",
+        "answer": ",ffmmr,mfr,mf,rf",
+        "score": 0.0,
+        "feedback": "The candidate provided an unintelligible response that does not address the question. This indicates a potential technical issue with the audio input or a failure to engage with the interview.",
+        "strengths": [],
+        "gaps": [
+          "No technical content provided",
+          "Answer is unintelligible",
+          "Failed to address the prompt"
+        ],
+        "difficulty": "easy",
+        "topic": "Full Stack Overview",
+        "evaluation": {
+          "score_0_10": 0.0,
+          "overall_score": 0.0,
+          "depth": "Shallow",
+          "technical_depth": "Shallow",
+          "correctness": "Incorrect",
+          "clarity": "Poor",
+          "strengths": [],
+          "gaps": [
+            "No technical content provided",
+            "Answer is unintelligible",
+            "Failed to address the prompt"
+          ],
+          "weaknesses": [
+            "No technical content provided",
+            "Answer is unintelligible",
+            "Failed to address the prompt"
+          ],
+          "new_topics_mentioned": [],
+          "mentioned_new_topics": [],
+          "confidence": "High",
+          "feedback": "The candidate provided an unintelligible response that does not address the question. This indicates a potential technical issue with the audio input or a failure to engage with the interview."
+        },
+        "latency": {
+          "llm_ms": 892,
+          "total_ms": 892
+        },
+        "timestamp": "2026-11-20T08:27:46.273506"
+      },
+      {
+        "question_number": 3,
+        "question": "It seems there was a glitch with your previous response. Could you please try answering the question again about your full-stack experience?",
+        "answer": "reettethh hh h",
+        "score": 0.0,
+        "feedback": "The candidate provided an unintelligible response, likely due to a technical issue or lack of engagement, making it impossible to assess technical skills.",
+        "strengths": [],
+        "gaps": [
+          "No technical content provided",
+          "Response is unintelligible"
+        ],
+        "difficulty": "easy",
+        "topic": "JavaScript Fundamentals",
+        "evaluation": {
+          "score_0_10": 0.0,
+          "overall_score": 0.0,
+          "depth": "Shallow",
+          "technical_depth": "Shallow",
+          "correctness": "Incorrect",
+          "clarity": "Poor",
+          "strengths": [],
+          "gaps": [
+            "No technical content provided",
+            "Response is unintelligible"
+          ],
+          "weaknesses": [
+            "No technical content provided",
+            "Response is unintelligible"
+          ],
+          "new_topics_mentioned": [],
+          "mentioned_new_topics": [],
+          "confidence": "High",
+          "feedback": "The candidate provided an unintelligible response, likely due to a technical issue or lack of engagement, making it impossible to assess technical skills."
+        },
+        "latency": {
+          "llm_ms": 1704,
+          "total_ms": 1705
+        },
+        "timestamp": "2026-11-20T08:28:07.080571"
+      },
+      {
+        "question_number": 4,
+        "question": "I'm not receiving any clear audio or text from you. Can you please confirm you are connected and ready to speak?",
+        "answer": "pata nahii kya hai answer",
+        "score": 0.0,
+        "feedback": "The candidate provided an incoherent response in Hindi ('I don't know what the answer is') instead of confirming connection or answering the technical prompt. This indicates a complete failure to engage with the interview process or a significant communication barrier.",
+        "strengths": [],
+        "gaps": [
+          "No technical content provided",
+          "Response is incoherent or non-English",
+          "Failure to confirm connection or readiness"
+        ],
+        "difficulty": "easy",
+        "topic": "Connection Verification",
+        "evaluation": {
+          "score_0_10": 0.0,
+          "overall_score": 0.0,
+          "depth": "Shallow",
+          "technical_depth": "Shallow",
+          "correctness": "Incorrect",
+          "clarity": "Poor",
+          "strengths": [],
+          "gaps": [
+            "No technical content provided",
+            "Response is incoherent or non-English",
+            "Failure to confirm connection or readiness"
+          ],
+          "weaknesses": [
+            "No technical content provided",
+            "Response is incoherent or non-English",
+            "Failure to confirm connection or readiness"
+          ],
+          "new_topics_mentioned": [],
+          "mentioned_new_topics": [],
+          "confidence": "High",
+          "feedback": "The candidate provided an incoherent response in Hindi ('I don't know what the answer is') instead of confirming connection or answering the technical prompt. This indicates a complete failure to engage with the interview process or a significant communication barrier."
+        },
+        "latency": {
+          "llm_ms": 1266,
+          "total_ms": 1266
+        },
+        "timestamp": "2026-11-20T08:28:27.113903"
+      }
+    ],
+    "created_at": "2026-11-20T08:27:31.431347",
+    "updated_at": "2026-11-20T08:35:48.980023",
+    "_id": "55b902c7-8bd2-4827-b181-16f143529c82"
   }
 ]
