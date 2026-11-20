@@ -875,8 +875,8 @@ const RecruiterDashboard: React.FC = () => {
     ? (scoredCandidates.reduce((acc, c) => acc + c.score, 0) / scoredCandidates.length).toFixed(1)
     : "0.0";
   const completionRate = totalCandidates > 0
-    ? `${Math.round((completedInterviews / totalCandidates) * 100)}%`
-    : "0%";
+    ? Math.round((completedInterviews / totalCandidates) * 100)
+    : 0;
 
   // Filter candidates for command palette
   const matchingPaletteCandidates = candidates.filter(c =>
@@ -2062,8 +2062,8 @@ const RecruiterDashboard: React.FC = () => {
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[0.6875rem] text-[var(--text-muted)]">Candidate participation</span>
-                <span className={`text-[0.6875rem] ${getCompletionBadge(Number(completionRate)).colorClass}`}>
-                  {getCompletionBadge(Number(completionRate)).label}
+                <span className={`text-[0.6875rem] ${getCompletionBadge(completionRate).colorClass}`}>
+                  {getCompletionBadge(completionRate).label}
                 </span>
               </div>
             </div>
