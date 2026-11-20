@@ -1036,106 +1036,132 @@ async def validate_resume_upload(
 # Central in-memory store for 48h single-use interview invitation tokens
 _INTERVIEW_INVITES_CACHE: Dict[str, Dict[str, Any]] = {}
 
-class CreateInterviewLinkRequest(BaseModel):
+class ScheduleInterviewRequest(BaseModel):
     candidate_name: str
     candidate_email: str
-    candidate_id: Optional[str] = None
-    role: str
+    job_role: Optional[str] = None
+    role: Optional[str] = None  # Support either job_role or role
+    job_description: Optional[str] = None
     skills: Optional[List[str]] = []
+    resume_text: Optional[str] = None
+    resume_filename: Optional[str] = None
     expires_in_hours: Optional[int] = 48
+    is_demo: Optional[bool] = False
 
+# Backward compatibility alias
+CreateInterviewLinkRequest = ScheduleInterviewRequest
+
+class SendInterviewEmailRequest(BaseModel):
+    candidate_email: str
+    candidate_name: str
+    job_title: str
+    interview_url: str
+    expires_at: Optional[str] = None
+
+class TokenSessionRequest(BaseModel):
+    token: str
+
+class ExtendExpiryRequest(BaseModel):
+    additional_hours: Optional[int] = 48
+
+@app.post("/api/interviews/schedule")
 @app.post("/api/interviews/create-link")
-async def create_interview_link(
-    req: CreateInterviewLinkRequest,
+async def schedule_interview_endpoint(
+    req: ScheduleInterviewRequest,
     auth_user: Dict[str, Any] = Depends(require_recruiter_role)
 ):
     """
-    Creates a unique single-use AI interview link (/interview/[token]) that expires in 48 hours.
+    Recruiter-only endpoint to schedule an interview.
+    Creates an interview record with status 'Scheduled' and a secure random token.
+    Stores ONLY the token hash in the database.
     """
-    token = f"iv_{secrets.token_urlsafe(12)}"
-    now = datetime.datetime.utcnow()
-    expires_at = now + datetime.timedelta(hours=req.expires_in_hours or 48)
-    
-    invite_doc = {
-        "token": token,
-        "candidate_name": req.candidate_name.strip(),
-        "candidate_email": req.candidate_email.strip(),
-        "candidate_id": req.candidate_id or f"cand-{int(datetime.datetime.utcnow().timestamp())}",
-        "role": req.role.strip(),
-        "skills": req.skills or [],
-        "created_at": now.isoformat(),
-        "expires_at": expires_at.isoformat(),
-        "expires_at_timestamp": int(expires_at.timestamp() * 1000),
-        "is_used": False,
-        "status": "Scheduled"
-    }
-    
-    _INTERVIEW_INVITES_CACHE[token] = invite_doc
-    
-    try:
-        db = get_db()
-        if db is not None:
-            db["interview_invites"].insert_one(invite_doc.copy())
-    except Exception as me:
-        logger.warning(f"Could not persist interview invite to Mongo: {me}")
-        
-    return {
-        "success": True,
-        "token": token,
-        "interview_url": f"/interview/{token}",
-        "expires_at": expires_at.isoformat(),
-        "expires_in_hours": req.expires_in_hours or 48,
-        "invite": invite_doc
-    }
+    role = req.job_role or req.role or "Full Stack Developer"
+    service = get_candidate_service()
+    result = service.schedule_interview(
+        candidate_name=req.candidate_name,
+        candidate_email=req.candidate_email,
+        role=role,
+        job_description=req.job_description,
+        skills=req.skills,
+        resume_text=req.resume_text,
+        resume_filename=req.resume_filename,
+        expires_in_hours=req.expires_in_hours or 48,
+        is_demo=req.is_demo or False
+    )
+    return result
 
+@app.get("/api/interviews/validate/{token}")
 @app.get("/api/interviews/verify-link/{token}")
-async def verify_interview_link(token: str):
+async def validate_interview_token_endpoint(token: str):
     """
-    Verifies that the single-use interview token is valid and not expired.
+    Public token validation endpoint for candidates.
+    Validates token exists, not expired, not cancelled, not completed.
+    Returns read-only candidate details without scores or evaluation.
     """
-    invite = _INTERVIEW_INVITES_CACHE.get(token)
-    if not invite:
-        try:
-            db = get_db()
-            if db is not None:
-                doc = db["interview_invites"].find_one({"token": token})
-                if doc:
-                    doc.pop("_id", None)
-                    invite = doc
-                    _INTERVIEW_INVITES_CACHE[token] = invite
-        except Exception:
-            pass
+    service = get_candidate_service()
+    return service.validate_interview_token(token)
 
-    if not invite:
-        return {
-            "valid": False,
-            "error": "Interview invitation not found or invalid."
-        }
+@app.post("/api/interviews/start-session")
+async def start_interview_session_endpoint(req: TokenSessionRequest):
+    """
+    Candidate starts interview session upon consent.
+    Updates status from 'Scheduled' to 'In Progress'.
+    """
+    service = get_candidate_service()
+    return service.start_interview_by_token(req.token)
 
-    now = datetime.datetime.utcnow()
-    try:
-        expires_at = datetime.datetime.fromisoformat(invite["expires_at"])
-    except Exception:
-        expires_at = now + datetime.timedelta(hours=48)
-        
-    if now > expires_at:
-        return {
-            "valid": False,
-            "expired": True,
-            "error": "This interview invitation has expired (valid for 48 hours). Please contact your recruiter for a new link."
-        }
-        
-    if invite.get("is_used"):
-        return {
-            "valid": False,
-            "already_used": True,
-            "error": "This single-use interview link has already been used and completed."
-        }
+@app.post("/api/interviews/complete-session")
+async def complete_interview_session_endpoint(req: TokenSessionRequest):
+    """
+    Candidate finishes interview.
+    Updates status to 'Completed' and locks link permanently.
+    """
+    service = get_candidate_service()
+    return service.complete_interview_by_token(req.token)
 
-    return {
-        "valid": True,
-        "invite": invite
-    }
+@app.post("/api/interviews/send-invite-email")
+async def send_interview_email_endpoint(
+    req: SendInterviewEmailRequest,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
+):
+    """
+    Recruiter sends candidate invitation email with interview link.
+    """
+    from services.email_service import EmailService
+    email_service = EmailService()
+    result = email_service.send_ai_interview_link(
+        to_email=req.candidate_email,
+        candidate_name=req.candidate_name,
+        job_title=req.job_title,
+        interview_url=req.interview_url,
+        expires_at=req.expires_at
+    )
+    logger.info(f"📧 Dispatched invitation email to {req.candidate_email}: {result}")
+    return result
+
+@app.patch("/api/interviews/{candidate_id}/extend-expiry")
+async def extend_interview_expiry_endpoint(
+    candidate_id: str,
+    req: Optional[ExtendExpiryRequest] = None,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
+):
+    """
+    Recruiter extends expiry of scheduled interview.
+    """
+    additional_hours = req.additional_hours if req else 48
+    service = get_candidate_service()
+    return service.extend_interview_expiry(candidate_id, additional_hours=additional_hours)
+
+@app.post("/api/interviews/{candidate_id}/cancel")
+async def cancel_interview_endpoint(
+    candidate_id: str,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
+):
+    """
+    Recruiter cancels scheduled interview.
+    """
+    service = get_candidate_service()
+    return service.cancel_interview(candidate_id)
 
 # ============================================================================
 # CANDIDATES MANAGEMENT & BULK ACTIONS
@@ -3284,8 +3310,8 @@ class InterviewScheduleRequest(BaseModel):
     auto_start_bot: bool = True  # Enable automatic bot joining when candidate clicks
 
 
-@app.post("/api/interviews/schedule")
-async def schedule_interview(request: InterviewScheduleRequest):
+@app.post("/api/interviews/schedule-google-meet")
+async def schedule_interview_meet(request: InterviewScheduleRequest):
     """
     Schedule an AI-assisted interview
     
@@ -6123,6 +6149,25 @@ async def start_interview_endpoint(request: InterviewStartRequest):
     logger.info(f"📞 Interview start request for: {request.candidate_name}")
     
     try:
+        # Enrich from database if candidate was pre-scheduled with job description & skills
+        if request.interview_id:
+            try:
+                candidate_service = get_candidate_service()
+                db_cand = candidate_service.get_candidate_by_id(request.interview_id)
+                if not db_cand:
+                    val = candidate_service.validate_interview_token(request.interview_id)
+                    if val.get("valid"):
+                        db_cand = val.get("candidate")
+                if db_cand:
+                    request.candidate_name = request.candidate_name or db_cand.get("name", "Candidate")
+                    request.candidate_email = request.candidate_email or db_cand.get("email", "")
+                    request.job_title = request.job_title or db_cand.get("role", "Full Stack Developer")
+                    request.job_description = request.job_description or db_cand.get("job_description")
+                    request.required_skills = request.required_skills or db_cand.get("skills")
+                    request.candidate_resume = request.candidate_resume or db_cand.get("resume_text")
+            except Exception as ex:
+                logger.warning(f"Could not enrich interview config from DB: {ex}")
+
         # Prepare interview configuration
         interview_config = {
             "interview_id": request.interview_id,

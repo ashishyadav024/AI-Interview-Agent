@@ -105,19 +105,10 @@ const App = () => (
                 element={<ProtectedRoute allowedRoles={['RECRUITER', 'ADMIN', 'HIRING_MANAGER']}><RecruiterDashboard /></ProtectedRoute>} 
               />
               
-              {/* Candidate Area & Live Interview Room Protected Routes */}
-              <Route 
-                path="/interview" 
-                element={<ProtectedRoute allowedRoles={['CANDIDATE', 'RECRUITER', 'ADMIN', 'HIRING_MANAGER']}><VideoInterview /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/interview/:roomid" 
-                element={<ProtectedRoute allowedRoles={['CANDIDATE', 'RECRUITER', 'ADMIN', 'HIRING_MANAGER']}><VideoInterview /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/interviews" 
-                element={<ProtectedRoute allowedRoles={['CANDIDATE', 'RECRUITER', 'ADMIN', 'HIRING_MANAGER']}><VideoInterview /></ProtectedRoute>} 
-              />
+              {/* Candidate Area & Live Interview Room Routes (Public with secure token validation) */}
+              <Route path="/interview" element={<VideoInterview />} />
+              <Route path="/interview/:roomid" element={<VideoInterview />} />
+              <Route path="/interviews" element={<VideoInterview />} />
 
               {/* Analysis Tools */}
               <Route path="/resumeAnalyzer" element={<ResumeAnalyzer />} />

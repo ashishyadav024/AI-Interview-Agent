@@ -286,4 +286,195 @@ export const interviewService = {
       return { success: false };
     }
   },
+
+  /**
+   * Recruiter schedules new interview with secure hashed token
+   */
+  async scheduleInterview(payload: {
+    candidate_name: string;
+    candidate_email: string;
+    job_role: string;
+    job_description?: string;
+    skills?: string[];
+    resume_text?: string;
+    resume_filename?: string;
+    expires_in_hours?: number;
+    is_demo?: boolean;
+  }): Promise<{
+    success: boolean;
+    token?: string;
+    interview_url?: string;
+    expires_at?: string;
+    expires_in_hours?: number;
+    candidate?: any;
+    error?: string;
+  }> {
+    try {
+      const userRole = localStorage.getItem("user_role") || "RECRUITER";
+      const token = localStorage.getItem("auth_token") || "";
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-User-Role": userRole,
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/schedule`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => null);
+        return { success: false, error: err?.detail || `Failed to schedule: HTTP ${response.status}` };
+      }
+      return await response.json();
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : "Network error scheduling interview" };
+    }
+  },
+
+  /**
+   * Validate interview token on the server (Read-only, single-use, non-expired)
+   */
+  async validateToken(token: string): Promise<{
+    valid: boolean;
+    reason?: "not_found" | "cancelled" | "completed" | "expired" | "missing";
+    message?: string;
+    candidate?: {
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      job_description?: string;
+      skills?: string[];
+      resume_text?: string;
+      expires_at?: string;
+      status?: string;
+      is_demo?: boolean;
+    };
+  }> {
+    try {
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/validate/${encodeURIComponent(token)}`);
+      if (!response.ok) {
+        return { valid: false, reason: "not_found", message: "Failed to validate interview link." };
+      }
+      return await response.json();
+    } catch (err: unknown) {
+      return { valid: false, reason: "not_found", message: "Cannot connect to server to validate link." };
+    }
+  },
+
+  /**
+   * Start interview session upon candidate device consent
+   */
+  async startSession(token: string): Promise<{ success: boolean; status?: string; message?: string }> {
+    try {
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/start-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      return await response.json();
+    } catch {
+      return { success: false, message: "Network error" };
+    }
+  },
+
+  /**
+   * Complete interview session upon final answer
+   */
+  async completeSession(token: string): Promise<{ success: boolean; status?: string }> {
+    try {
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/complete-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      return await response.json();
+    } catch {
+      return { success: false };
+    }
+  },
+
+  /**
+   * Send interview invitation email to candidate
+   */
+  async sendInviteEmail(payload: {
+    candidate_email: string;
+    candidate_name: string;
+    job_title: string;
+    interview_url: string;
+    expires_at?: string;
+  }): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const userRole = localStorage.getItem("user_role") || "RECRUITER";
+      const token = localStorage.getItem("auth_token") || "";
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-User-Role": userRole,
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/send-invite-email`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      return await response.json();
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : "Failed to send email" };
+    }
+  },
+
+  /**
+   * Extend expiry of a scheduled interview
+   */
+  async extendExpiry(candidateId: string, additionalHours: number = 48): Promise<{ success: boolean; new_expires_at?: string }> {
+    try {
+      const userRole = localStorage.getItem("user_role") || "RECRUITER";
+      const token = localStorage.getItem("auth_token") || "";
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-User-Role": userRole,
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/${encodeURIComponent(candidateId)}/extend-expiry`, {
+        method: "PATCH",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ additional_hours: additionalHours }),
+      });
+      return await response.json();
+    } catch {
+      return { success: false };
+    }
+  },
+
+  /**
+   * Cancel a scheduled interview
+   */
+  async cancelInterview(candidateId: string): Promise<{ success: boolean; status?: string }> {
+    try {
+      const userRole = localStorage.getItem("user_role") || "RECRUITER";
+      const token = localStorage.getItem("auth_token") || "";
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-User-Role": userRole,
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/interviews/${encodeURIComponent(candidateId)}/cancel`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+      });
+      return await response.json();
+    } catch {
+      return { success: false };
+    }
+  },
 };

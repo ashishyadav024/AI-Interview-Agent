@@ -6,6 +6,7 @@ interface InterviewLayoutProps {
   children: React.ReactNode;
   candidateName?: string;
   isRecruiter?: boolean;
+  isDemo?: boolean;
   onLogout?: () => void;
   maxWidthClass?: string;
 }
@@ -14,6 +15,7 @@ export const InterviewLayout: React.FC<InterviewLayoutProps> = ({
   children,
   candidateName,
   isRecruiter = false,
+  isDemo = false,
   onLogout,
   maxWidthClass = "max-w-6xl",
 }) => {
@@ -33,21 +35,21 @@ export const InterviewLayout: React.FC<InterviewLayoutProps> = ({
               AI Interview <span className="text-[var(--primary)]">Agent</span>
             </span>
             <span className="hidden sm:inline-block text-[11px] font-mono bg-blue-50 dark:bg-blue-950/50 text-[var(--primary)] px-2 py-0.5 rounded-full border border-blue-200/80 dark:border-blue-800">
-              Assessment Room
+              {isDemo ? "Recruiter Demo Sandbox" : "Candidate Assessment"}
             </span>
           </div>
         </div>
 
         {/* Right: Actions depending on role */}
         <div className="flex items-center gap-3">
-          {isRecruiter ? (
+          {isDemo ? (
             <button
               type="button"
               onClick={() => navigate("/dashboard")}
-              className="px-3.5 py-1.5 rounded-lg border border-[var(--border)] text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--text)] transition-colors flex items-center gap-1.5 shadow-xs bg-white"
+              className="px-3.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors flex items-center gap-1.5 shadow-xs"
             >
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              <span>Back to Dashboard</span>
+              <span className="material-symbols-outlined text-[16px]">science</span>
+              <span>Exit Demo (Back to Dashboard)</span>
             </button>
           ) : (
             <>
@@ -59,16 +61,15 @@ export const InterviewLayout: React.FC<InterviewLayoutProps> = ({
                   <span className="max-w-[140px] truncate">{candidateName}</span>
                 </div>
               )}
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="px-3 py-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors flex items-center gap-1.5 shadow-xs bg-white"
-                >
-                  <span className="material-symbols-outlined text-[16px]">logout</span>
-                  <span>Sign Out</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--text)] transition-colors flex items-center gap-1.5 shadow-xs bg-white"
+                title="Exit Assessment"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+                <span>Exit</span>
+              </button>
             </>
           )}
         </div>

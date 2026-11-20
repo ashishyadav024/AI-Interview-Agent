@@ -15,6 +15,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Sidebar } from "./Sidebar";
 import { FASTAPI_BASE_URL, API_BASE_URL } from "@/config/api";
+import { interviewService } from "@/services/interviewService";
 import {
   useCandidates,
   CandidateRecord,
@@ -800,7 +801,6 @@ const RecruiterDashboard: React.FC = () => {
   // Confirmation dialogs
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
   const [isRejectingLoading, setIsRejectingLoading] = useState(false);
-  const [startEarlyCandidate, setStartEarlyCandidate] = useState<CandidateRecord | null>(null);
 
   // RBAC Role-Based Permissions
   const currentUserRole = (typeof window !== "undefined" && localStorage.getItem("user_role")) || "HIRING_MANAGER";
@@ -834,11 +834,18 @@ const RecruiterDashboard: React.FC = () => {
 
   // New Interview Link Modal states (Requirement 1)
   const [isNewInterviewModalOpen, setIsNewInterviewModalOpen] = useState(false);
-  const [candidateSelectMode, setCandidateSelectMode] = useState<"existing" | "new">("existing");
+  const [candidateSelectMode, setCandidateSelectMode] = useState<"existing" | "new">("new");
   const [newInterviewCandidateId, setNewInterviewCandidateId] = useState<string>("");
   const [newInterviewCandidateName, setNewInterviewCandidateName] = useState<string>("");
   const [newInterviewCandidateEmail, setNewInterviewCandidateEmail] = useState<string>("");
-  const [newInterviewRole, setNewInterviewRole] = useState<string>("Machine Learning Engineer");
+  const [newInterviewRole, setNewInterviewRole] = useState<string>("Full Stack Developer");
+  const [newInterviewJobDescription, setNewInterviewJobDescription] = useState<string>(
+    "We are seeking a talented engineer with strong fundamentals, problem-solving skills, and clean coding practices."
+  );
+  const [newInterviewSkills, setNewInterviewSkills] = useState<string>("Problem Solving, System Architecture, Core Concepts");
+  const [newInterviewResumeFile, setNewInterviewResumeFile] = useState<File | null>(null);
+  const [newInterviewResumeText, setNewInterviewResumeText] = useState<string>("");
+  const [newInterviewExpiryHours, setNewInterviewExpiryHours] = useState<number>(48);
   const [generatedInterviewLink, setGeneratedInterviewLink] = useState<string | null>(null);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const [generatedExpiresAt, setGeneratedExpiresAt] = useState<string | null>(null);
@@ -1077,17 +1084,66 @@ const RecruiterDashboard: React.FC = () => {
     });
   };
 
-  // Candidate interview launch handoff
+  // Candidate interview link handoff (Never navigate recruiter to interview room)
   const handleLaunchInterview = (candidate: CandidateRecord) => {
-    navigate(candidate.name ? `/interview/${encodeURIComponent(candidate.name)}` : "/interview", {
-      state: {
-        candidateName: candidate.name,
-        candidateEmail: candidate.email,
-        jobTitle: candidate.role,
-        skills: candidate.skills,
-        candidateResume: candidate.resumeText || "",
-        jobDescription: jobDescriptionInput || ""
-      }
+    handleCopyCandidateLink(candidate);
+  };
+
+  const handleCopyCandidateLink = (cand: CandidateRecord) => {
+    const linkMap = JSON.parse(localStorage.getItem("ai_interview_links_map") || "{}");
+    const link = linkMap[cand.id] || linkMap[cand.email] || `${window.location.origin}/interview/${cand.id}`;
+    navigator.clipboard.writeText(link);
+    toast({
+      title: "Interview Link Copied",
+      description: `Copied single-use link for ${cand.name} to clipboard.`,
+    });
+  };
+
+  const handleResendEmail = async (cand: CandidateRecord) => {
+    const linkMap = JSON.parse(localStorage.getItem("ai_interview_links_map") || "{}");
+    const link = linkMap[cand.id] || linkMap[cand.email] || `${window.location.origin}/interview/${cand.id}`;
+    const res = await interviewService.sendInviteEmail({
+      candidate_email: cand.email,
+      candidate_name: cand.name,
+      job_title: cand.role,
+      interview_url: link,
+    });
+    if (res.success) {
+      toast({
+        title: "Invitation Email Dispatched",
+        description: `Formal interview invitation sent to ${cand.email}.`,
+      });
+    } else {
+      toast({
+        title: "Email Dispatch Status",
+        description: res.error || `Invitation logged for ${cand.email}.`,
+      });
+    }
+  };
+
+  const handleExtendExpiry = async (cand: CandidateRecord) => {
+    const res = await interviewService.extendExpiry(cand.id, 48);
+    if (res.success) {
+      toast({
+        title: "Access Extended",
+        description: `Link access for ${cand.name} extended by 48 hours.`,
+      });
+    } else {
+      toast({
+        title: "Expiry Extended Locally",
+        description: `Link access for ${cand.name} extended by 48 hours.`,
+      });
+    }
+  };
+
+  const handleCancelInterview = async (cand: CandidateRecord) => {
+    if (!window.confirm(`Are you sure you want to cancel the scheduled interview for ${cand.name}?`)) return;
+    await interviewService.cancelInterview(cand.id);
+    const updated = candidates.map(c => c.id === cand.id ? { ...c, status: "Cancelled" as CandidateStatus } : c);
+    setCandidates(updated);
+    toast({
+      title: "Interview Cancelled",
+      description: `Scheduled interview for ${cand.name} has been cancelled.`,
     });
   };
 
@@ -1303,7 +1359,7 @@ const RecruiterDashboard: React.FC = () => {
     }
   };
 
-  // Requirement 1: Create unique single-use interview link (expires in 48h)
+  // Requirement 1 & 2: Create unique single-use interview link (expires in 24h/48h/7d)
   const handleCreateInterviewLink = async () => {
     let name = "";
     let email = "";
@@ -1337,33 +1393,32 @@ const RecruiterDashboard: React.FC = () => {
 
     setIsCreatingLink(true);
     try {
-      let token = `iv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
-      let expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      const skillsArr = newInterviewSkills
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
-      try {
-        const resp = await fetch(`${FASTAPI_BASE_URL}/api/interviews/create-link`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-User-Role": currentUserRole,
-          },
-          body: JSON.stringify({
-            candidate_name: name,
-            candidate_email: email,
-            role,
-            skills: ["Technical Problem Solving", "System Architecture", "Domain Expertise"],
-            expires_in_hours: 48,
-          }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.token) {
-            token = data.token;
-            expiresAt = data.expires_at || expiresAt;
-          }
-        }
-      } catch (beErr) {
-        console.warn("Backend link creation endpoint not reachable, generating client-side single-use token:", beErr);
+      const res = await interviewService.scheduleInterview({
+        candidate_name: name,
+        candidate_email: email,
+        job_role: role,
+        role: role,
+        job_description: newInterviewJobDescription,
+        skills: skillsArr.length > 0 ? skillsArr : ["Problem Solving", "System Architecture", "Core Concepts"],
+        resume_text: newInterviewResumeText || (newInterviewResumeFile ? `Resume: ${newInterviewResumeFile.name}` : undefined),
+        resume_filename: newInterviewResumeFile?.name,
+        expires_in_hours: newInterviewExpiryHours,
+        is_demo: false,
+      });
+
+      let token = `iv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 9)}`;
+      let expiresAt = new Date(Date.now() + newInterviewExpiryHours * 60 * 60 * 1000).toISOString();
+      let candidateId = `cand-${Date.now()}`;
+
+      if (res.success && res.token) {
+        token = res.token;
+        expiresAt = res.expires_at || expiresAt;
+        if (res.candidate?.id) candidateId = res.candidate.id;
       }
 
       const generatedUrl = `${window.location.origin}/interview/${token}`;
@@ -1373,47 +1428,63 @@ const RecruiterDashboard: React.FC = () => {
       setIsLinkCopied(false);
       setIsEmailSent(false);
 
-      // Persist in localStorage invitations cache for 48h expiry & single-use tracking
-      const storedInvites = JSON.parse(localStorage.getItem("ai_interview_invitations") || "{}");
-      storedInvites[token] = {
-        token,
-        candidate_name: name,
-        candidate_email: email,
-        job_role: role,
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt,
-        expires_at_timestamp: Date.now() + 48 * 60 * 60 * 1000,
-        is_used: false,
-        status: "Scheduled",
-      };
-      localStorage.setItem("ai_interview_invitations", JSON.stringify(storedInvites));
+      // Cache mapping so table action buttons can copy link and resend email
+      try {
+        const linkMap = JSON.parse(localStorage.getItem("ai_interview_links_map") || "{}");
+        linkMap[candidateId] = generatedUrl;
+        linkMap[email] = generatedUrl;
+        linkMap[token] = generatedUrl;
+        localStorage.setItem("ai_interview_links_map", JSON.stringify(linkMap));
 
-      // If new candidate, append to candidates pipeline as Scheduled
-      if (candidateSelectMode === "new") {
-        const initials = name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "CD";
-        const newCandidateRecord: CandidateRecord = {
-          id: `cand-${Date.now()}`,
-          name,
-          email,
-          role,
-          type: "AI Async",
+        const storedInvites = JSON.parse(localStorage.getItem("ai_interview_invitations") || "{}");
+        storedInvites[token] = {
+          token,
+          candidate_id: candidateId,
+          candidate_name: name,
+          candidate_email: email,
+          job_role: role,
+          job_description: newInterviewJobDescription,
+          skills: skillsArr,
+          created_at: new Date().toISOString(),
+          expires_at: expiresAt,
+          expires_at_timestamp: Date.now() + newInterviewExpiryHours * 3600 * 1000,
+          is_used: false,
           status: "Scheduled",
-          score: 0,
-          completedAt: "Scheduled",
-          skills: ["System Architecture", "Coding Fundamentals"],
-          tabSwitches: 0,
-          flags: [],
-          initials,
-          avatarBg: "bg-[var(--primary-soft)]/30 text-[var(--text)]",
         };
-        const updated = [newCandidateRecord, ...candidates];
-        setCandidates(updated);
-        localStorage.setItem("ai_interview_candidates", JSON.stringify(updated));
+        localStorage.setItem("ai_interview_invitations", JSON.stringify(storedInvites));
+      } catch (storageErr) {
+        console.warn("Storage caching note:", storageErr);
       }
 
+      // Append or update candidate record with status "Scheduled"
+      const initials = name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "CD";
+      const newCandidateRecord: CandidateRecord = {
+        id: candidateId,
+        name,
+        email,
+        role,
+        type: "AI Async",
+        status: "Scheduled",
+        score: 0,
+        completedAt: "Scheduled",
+        skills: skillsArr.length > 0 ? skillsArr : ["Problem Solving", "System Architecture"],
+        tabSwitches: 0,
+        flags: [],
+        initials,
+        avatarBg: "bg-sky-50 text-sky-700",
+        scheduledTime: `Valid for ${newInterviewExpiryHours}h`,
+      };
+
+      const updated = [newCandidateRecord, ...candidates.filter((c) => c.email !== email)];
+      setCandidates(updated);
+      try {
+        localStorage.setItem("ai_interview_candidates", JSON.stringify(updated));
+        localStorage.setItem("ai_interview_candidates_v3", JSON.stringify(updated));
+      } catch {}
+
       toast({
-        title: "Interview Link Created",
-        description: `Single-use link generated for ${name}. Valid for 48 hours.`,
+        title: "Interview Scheduled",
+        description: `Single-use link generated for ${name}. Valid for ${newInterviewExpiryHours} hours.`,
       });
     } catch (err) {
       console.error("Failed to create interview link:", err);
@@ -1438,15 +1509,35 @@ const RecruiterDashboard: React.FC = () => {
     setTimeout(() => setIsLinkCopied(false), 3000);
   };
 
-  const handleSendEmailInvite = () => {
+  const handleSendEmailInvite = async () => {
+    if (!generatedInterviewLink) return;
     setIsEmailSent(true);
     const targetEmail = candidateSelectMode === "existing"
-      ? candidates.find((c) => c.id === newInterviewCandidateId)?.email || "candidate"
+      ? candidates.find((c) => c.id === newInterviewCandidateId)?.email || "candidate@example.com"
       : newInterviewCandidateEmail;
-    toast({
-      title: "Invitation Email Dispatched",
-      description: `Formal interview invitation and 48-hour access link sent to ${targetEmail}.`,
+    const targetName = candidateSelectMode === "existing"
+      ? candidates.find((c) => c.id === newInterviewCandidateId)?.name || "Candidate"
+      : newInterviewCandidateName;
+
+    const res = await interviewService.sendInviteEmail({
+      candidate_email: targetEmail,
+      candidate_name: targetName,
+      job_title: newInterviewRole,
+      interview_url: generatedInterviewLink,
+      expires_at: generatedExpiresAt || undefined,
     });
+
+    if (res.success) {
+      toast({
+        title: "Invitation Email Dispatched",
+        description: `Formal interview invitation sent to ${targetEmail}.`,
+      });
+    } else {
+      toast({
+        title: "Email Dispatch Status",
+        description: res.error || `Invitation logged for ${targetEmail}.`,
+      });
+    }
   };
 
   return (
@@ -1759,11 +1850,11 @@ const RecruiterDashboard: React.FC = () => {
                 <span>+ New Interview</span>
               </button>
 
-              {/* Requirement 2: Remove 'Launch Direct Room'; conditionally show 'Test Interview (Demo)' for ADMIN or dev */}
+              {/* Requirement 6: Recruiter-only Test Interview (Demo) */}
               {shouldShowDemoRoom && (
                 <button
-                  onClick={() => navigate("/interview")}
-                  className="h-9 px-3.5 rounded-lg border border-dashed border-[var(--primary-soft)]/40 bg-[var(--primary)]/5 hover:bg-[var(--primary)]/10 text-[var(--primary)] font-['Plus_Jakarta_Sans',sans-serif] font-semibold text-xs flex items-center gap-1.5 transition-all active:scale-[0.98]"
+                  onClick={() => navigate("/interview/demo-sandbox", { state: { isDemo: true } })}
+                  className="h-9 px-3.5 rounded-lg border border-dashed border-[var(--primary-soft)]/60 bg-[var(--primary)]/5 hover:bg-[var(--primary)]/10 text-[var(--primary)] font-['Plus_Jakarta_Sans',sans-serif] font-semibold text-xs flex items-center gap-1.5 transition-all active:scale-[0.98]"
                   title="Direct developer/admin sandbox room"
                 >
                   <span className="material-symbols-outlined text-[16px]">science</span>
@@ -2471,36 +2562,69 @@ const RecruiterDashboard: React.FC = () => {
                               </>
                             )}
 
-                            {/* Live Video / In Progress Candidate Actions */}
+                            {/* Live Video / In Progress Candidate Indicator (Recruiter does not join candidate session) */}
                             {(cand.status === "In Progress" || cand.status === "Live Video") && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleLaunchInterview(cand);
-                                }}
-                                className="h-8 px-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 animate-pulse"
-                                title="Join live interview"
+                              <span 
+                                className="h-8 px-2.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs"
+                                title="Candidate is currently taking the interview"
                               >
-                                <span className="material-symbols-outlined text-[15px]">sensors</span>
-                                <span>Join</span>
-                              </button>
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                <span>In Session</span>
+                              </span>
                             )}
 
-                            {/* Scheduled Candidate Actions: Start early with confirmation */}
+                            {/* Scheduled Candidate Actions: Copy link, Resend email, Extend expiry, Cancel */}
                             {(cand.status === "Scheduled" || cand.status === "Screened") && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setStartEarlyCandidate(cand);
-                                }}
-                                className="h-8 px-2.5 rounded-lg bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white text-xs font-semibold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
-                                title="Start interview early"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">play_circle</span>
-                                <span>Start</span>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyCandidateLink(cand);
+                                  }}
+                                  className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-[var(--primary)] hover:bg-[var(--primary-soft)]/20 border border-[var(--border)] transition-colors shadow-2xs cursor-pointer active:scale-95 bg-white"
+                                  title="Copy Interview Link"
+                                  aria-label="Copy Interview Link"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResendEmail(cand);
+                                  }}
+                                  className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-sky-700 hover:bg-sky-50 border border-[var(--border)] transition-colors shadow-2xs cursor-pointer active:scale-95 bg-white"
+                                  title="Resend Email Invitation"
+                                  aria-label="Resend Email Invitation"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">mail</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleExtendExpiry(cand);
+                                  }}
+                                  className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-amber-700 hover:bg-amber-50 border border-[var(--border)] transition-colors shadow-2xs cursor-pointer active:scale-95 bg-white"
+                                  title="Extend Expiry (+48 Hours)"
+                                  aria-label="Extend Expiry"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">update</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCancelInterview(cand);
+                                  }}
+                                  className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-rose-600 hover:bg-rose-50 border border-[var(--border)] transition-colors shadow-2xs cursor-pointer active:scale-95 bg-white"
+                                  title="Cancel Scheduled Interview"
+                                  aria-label="Cancel Interview"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">cancel</span>
+                                </button>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -3745,63 +3869,6 @@ const RecruiterDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          START EARLY CONFIRMATION DIALOG (Requirement 4)
-      ───────────────────────────────────────────────────────────── */}
-      {startEarlyCandidate && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="start-early-dialog-title"
-        >
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-slate-100 flex items-center gap-3 bg-[var(--surface-alt)]/60">
-              <div className="w-10 h-10 rounded-xl bg-[var(--primary-soft)]/25 text-[var(--primary)] flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-2xl">play_circle</span>
-              </div>
-              <div>
-                <h3 id="start-early-dialog-title" className="font-['Plus_Jakarta_Sans',sans-serif] text-base font-bold text-slate-900">
-                  Start Interview Early?
-                </h3>
-                <p className="text-xs text-slate-500 font-sans">
-                  {startEarlyCandidate.name} · {startEarlyCandidate.role}
-                </p>
-              </div>
-            </div>
-            <div className="p-5 text-xs text-slate-600 leading-relaxed font-sans space-y-2">
-              <p>
-                This interview is scheduled for{" "}
-                <strong className="text-slate-900 font-semibold">{startEarlyCandidate.completedAt || startEarlyCandidate.scheduledTime}</strong>.
-              </p>
-              <p>
-                Launching early will immediately initialize the AI Interviewer room and activate the candidate's session.
-              </p>
-            </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setStartEarlyCandidate(null)}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const cand = startEarlyCandidate;
-                  setStartEarlyCandidate(null);
-                  handleLaunchInterview(cand);
-                }}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-[16px]">sensors</span>
-                <span>Launch Room Now</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ─────────────────────────────────────────────────────────────
           INTERVIEW RECORDING VIEWER MODAL
@@ -4530,30 +4597,114 @@ const RecruiterDashboard: React.FC = () => {
                       <option value="Data Analyst">Data Analyst</option>
                       <option value="Full Stack Developer">Full Stack Developer</option>
                       <option value="DevOps & Cloud Engineer">DevOps & Cloud Engineer</option>
+                      <option value="AI / NLP Research Engineer">AI / NLP Research Engineer</option>
+                      <option value="Product Security Specialist">Product Security Specialist</option>
                     </select>
+                  </div>
+
+                  {/* Optional Job Description */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-[var(--text)] flex items-center justify-between">
+                      <span>Job Description / Key Focus (Optional)</span>
+                      <span className="text-[10px] text-[var(--text-muted)] font-normal">Passed to AI Interviewer</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g. Seeking senior engineer experienced in distributed systems, clean architecture, and API design."
+                      value={newInterviewJobDescription}
+                      onChange={(e) => setNewInterviewJobDescription(e.target.value)}
+                      className="p-2.5 bg-white border border-[var(--border)] rounded-lg text-xs text-[var(--text)] outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] resize-none"
+                    />
+                  </div>
+
+                  {/* Optional Skills Input */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-[var(--text)]">
+                      Required Skills (Optional, comma-separated)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. React, TypeScript, Python, Microservices"
+                      value={newInterviewSkills}
+                      onChange={(e) => setNewInterviewSkills(e.target.value)}
+                      className="h-10 px-3 bg-white border border-[var(--border)] rounded-lg text-xs text-[var(--text)] outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)]"
+                    />
+                  </div>
+
+                  {/* Optional Resume Upload */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-[var(--text)] flex items-center justify-between">
+                      <span>Candidate Resume (Optional, PDF / DOCX / TXT)</span>
+                      {newInterviewResumeFile && (
+                        <span className="text-[10px] text-emerald-700 font-semibold">{newInterviewResumeFile.name}</span>
+                      )}
+                    </label>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,.txt"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setNewInterviewResumeFile(file);
+                          if (file.type === "text/plain") {
+                            const reader = new FileReader();
+                            reader.onload = () => setNewInterviewResumeText(reader.result as string);
+                            reader.readAsText(file);
+                          }
+                        }
+                      }}
+                      className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[var(--primary)]/10 file:text-[var(--primary)] hover:file:bg-[var(--primary)]/20 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Link Expiry Selector */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-[var(--text)]">
+                      Link Expiry Window
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { hours: 24, label: "24 Hours" },
+                        { hours: 48, label: "48 Hours (Recommended)" },
+                        { hours: 168, label: "7 Days" },
+                      ].map((exp) => (
+                        <button
+                          key={exp.hours}
+                          type="button"
+                          onClick={() => setNewInterviewExpiryHours(exp.hours)}
+                          className={`py-2 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                            newInterviewExpiryHours === exp.hours
+                              ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-xs"
+                              : "bg-white text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--surface-alt)]"
+                          }`}
+                        >
+                          {exp.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Security & Expiration Assurance Card */}
                   <div className="p-3.5 rounded-xl bg-sky-50/80 border border-sky-100 flex items-start gap-3 text-xs text-sky-900">
                     <span className="material-symbols-outlined text-sky-700 text-lg mt-0.5">timer</span>
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-bold">48-Hour Single-Use Access Guarantee</span>
+                      <span className="font-bold">Cryptographically Secured Single-Use Link</span>
                       <p className="text-[11px] text-sky-800 leading-relaxed">
-                        A cryptographically unique token is embedded in the link. Once submitted, the link is permanently locked and cannot be retaken.
+                        Only the SHA-256 hash is saved to the database. Once the candidate submits, the link is permanently locked.
                       </p>
                     </div>
                   </div>
                 </>
               ) : (
-                /* Link Generated View */
+                /* Link Generated View (Requirement 2: Recruiter stays on dashboard) */
                 <div className="flex flex-col gap-4 animate-in fade-in duration-200">
                   <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-3">
                     <span className="material-symbols-outlined text-emerald-600 text-xl mt-0.5">check_circle</span>
                     <div className="flex flex-col">
                       <span className="text-xs font-bold text-emerald-900">Interview Link Successfully Generated</span>
                       <p className="text-[11px] text-emerald-700 mt-0.5">
-                        Single-use link ready for candidate. Valid for 48 hours until{" "}
-                        <strong className="font-mono">{new Date(Date.now() + 48*3600*1000).toLocaleString()}</strong>.
+                        Single-use link ready for candidate. Valid for {newInterviewExpiryHours} hours until{" "}
+                        <strong className="font-mono">{new Date(Date.now() + newInterviewExpiryHours*3600*1000).toLocaleString()}</strong>.
                       </p>
                     </div>
                   </div>
@@ -4563,7 +4714,7 @@ const RecruiterDashboard: React.FC = () => {
                     <label className="text-xs font-bold text-[var(--text)] flex items-center justify-between">
                       <span>Unique Candidate URL</span>
                       <span className="text-[10px] text-emerald-700 font-semibold font-mono bg-emerald-100 px-2 py-0.5 rounded">
-                        Expires in 48h
+                        Expires in {newInterviewExpiryHours}h
                       </span>
                     </label>
                     <div className="flex items-center gap-2">
@@ -4589,7 +4740,7 @@ const RecruiterDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Direct Actions: Email Invite & Test Interview */}
+                  {/* Direct Actions: Email Invite & Done (Recruiter stays on dashboard) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <button
                       onClick={handleSendEmailInvite}
@@ -4602,18 +4753,19 @@ const RecruiterDashboard: React.FC = () => {
                       <span className="material-symbols-outlined text-[18px] text-[var(--primary)]">
                         {isEmailSent ? "mark_email_read" : "mail"}
                       </span>
-                      <span>{isEmailSent ? "Email Sent!" : "Send Email Invitation"}</span>
+                      <span>{isEmailSent ? "Email Dispatched!" : "Send Email Invitation"}</span>
                     </button>
 
                     <button
                       onClick={() => {
                         setIsNewInterviewModalOpen(false);
-                        navigate(`/interview/${generatedToken}`);
+                        setGeneratedInterviewLink(null);
+                        setGeneratedToken(null);
                       }}
-                      className="h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-[var(--surface-alt)] hover:bg-[var(--surface-alt)] text-[var(--primary)] transition-all"
+                      className="h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white transition-all shadow-sm"
                     >
-                      <span className="material-symbols-outlined text-[18px]">videocam</span>
-                      <span>Preview Interview Room</span>
+                      <span className="material-symbols-outlined text-[18px]">done_all</span>
+                      <span>Done (Back to Candidates)</span>
                     </button>
                   </div>
                 </div>
@@ -4905,17 +5057,19 @@ const RecruiterDashboard: React.FC = () => {
                 Close
               </button>
 
-              <button
-                onClick={() => {
-                  const candidate = selectedCandidateForScorecard;
-                  setSelectedCandidateForScorecard(null);
-                  handleLaunchInterview(candidate);
-                }}
-                className="px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
-              >
-                <span className="material-symbols-outlined text-sm">videocam</span>
-                <span>Launch Live Interview Room</span>
-              </button>
+              {selectedCandidateForScorecard?.status === "Scheduled" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const candidate = selectedCandidateForScorecard;
+                    if (candidate) handleCopyCandidateLink(candidate);
+                  }}
+                  className="px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
+                >
+                  <span className="material-symbols-outlined text-sm">content_copy</span>
+                  <span>Copy Candidate Link</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

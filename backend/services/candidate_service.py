@@ -13,7 +13,9 @@ Handles:
 import logging
 import math
 import uuid
-from datetime import datetime
+import hashlib
+import secrets
+from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
 from db.mongo_client import get_collection, get_mongo_client
 from db.models import Collections
@@ -307,6 +309,261 @@ class CandidateService:
                 logger.info(f"✅ Seeded {len(INITIAL_SEED_CANDIDATES)} candidates successfully.")
         except Exception as e:
             logger.warning(f"⚠️ Index/seed initialization note: {e}")
+
+    def schedule_interview(
+        self,
+        candidate_name: str,
+        candidate_email: str,
+        role: str,
+        job_description: Optional[str] = None,
+        skills: Optional[List[str]] = None,
+        resume_text: Optional[str] = None,
+        resume_filename: Optional[str] = None,
+        expires_in_hours: int = 48,
+        is_demo: bool = False,
+        organization: str = "default_org"
+    ) -> Dict[str, Any]:
+        """
+        Schedule an interview with status 'Scheduled'.
+        Generates a cryptographically secure random token, hashes it with SHA-256,
+        and stores ONLY the token hash in the database.
+        The raw token is only returned to the caller to generate the candidate link.
+        """
+        now = datetime.utcnow()
+        expires_at = now + timedelta(hours=expires_in_hours)
+        
+        # Cryptographically secure random token (raw)
+        raw_token = f"iv_{secrets.token_urlsafe(32)}"
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+        interview_id = f"cand-{secrets.token_hex(4)}"
+        initials = "".join([part[0] for part in candidate_name.split() if part])[:2].upper() or "CD"
+        skills = skills or ["Problem Solving", "System Architecture", "Domain Competence"]
+
+        candidate_doc = {
+            "id": interview_id,
+            "interview_id": interview_id,
+            "name": candidate_name.strip(),
+            "email": candidate_email.strip().lower(),
+            "role": role.strip(),
+            "job_id": f"job-{role.lower().replace(' ', '-')[:12]}",
+            "job_description": job_description or "",
+            "interview_type": "AI Async",
+            "status": "Scheduled",
+            "score": 0,
+            "verdict": "Scheduled",
+            "flags": [],
+            "tab_switches": 0,
+            "started_at": None,
+            "completed_at": None,
+            "scheduled_time": now.strftime("%Y-%m-%d %H:%M UTC"),
+            "recording_url": None,
+            "report": None,
+            "organization": organization,
+            "skills": skills,
+            "avatar_bg": "bg-sky-50 text-sky-700",
+            "initials": initials,
+            "resume_text": resume_text or f"Scheduled interview for {role}. Candidate: {candidate_name}.",
+            "resume_filename": resume_filename,
+            "conversation_history": [],
+            "token_hash": token_hash,
+            "expires_at": expires_at.isoformat(),
+            "expires_in_hours": expires_in_hours,
+            "is_used": False,
+            "is_demo": is_demo,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }
+
+        # Insert into candidates collection
+        self.collection.insert_one(candidate_doc)
+
+        # Also store invite in interview_invites collection for fast lookups
+        try:
+            invites_col = get_collection("interview_invites")
+            invite_record = {
+                "token_hash": token_hash,
+                "candidate_id": interview_id,
+                "candidate_name": candidate_name.strip(),
+                "candidate_email": candidate_email.strip().lower(),
+                "role": role.strip(),
+                "job_description": job_description or "",
+                "skills": skills,
+                "resume_text": resume_text or "",
+                "created_at": now.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "is_used": False,
+                "status": "Scheduled",
+                "is_demo": is_demo
+            }
+            invites_col.insert_one(invite_record)
+        except Exception as e:
+            logger.warning(f"Failed to record in interview_invites: {e}")
+
+        logger.info(f"📅 Interview scheduled: {candidate_name} ({candidate_email}) - ID: {interview_id}")
+
+        clean_candidate = dict(candidate_doc)
+        clean_candidate.pop("_id", None)
+        clean_candidate.pop("token_hash", None)
+
+        return {
+            "success": True,
+            "token": raw_token,
+            "interview_url": f"/interview/{raw_token}",
+            "expires_at": expires_at.isoformat(),
+            "expires_in_hours": expires_in_hours,
+            "candidate": clean_candidate
+        }
+
+    def validate_interview_token(self, raw_token: str) -> Dict[str, Any]:
+        """
+        Validate single-use interview token:
+        - Computes SHA-256 hash of raw_token
+        - Verifies existence, expiration, cancellation, and single-use status
+        - Returns read-only candidate data without scores or evaluation
+        """
+        if not raw_token or not raw_token.strip():
+            return {
+                "valid": False,
+                "reason": "missing",
+                "message": "Please open the interview link sent by your recruiter."
+            }
+
+        token_hash = hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
+
+        # Find in collection by token_hash (or fallback raw_token for legacy tokens)
+        candidate = self.collection.find_one({
+            "$or": [
+                {"token_hash": token_hash},
+                {"token": raw_token.strip()},
+                {"id": raw_token.strip()}
+            ]
+        })
+
+        if not candidate:
+            try:
+                invites_col = get_collection("interview_invites")
+                inv = invites_col.find_one({
+                    "$or": [
+                        {"token_hash": token_hash},
+                        {"token": raw_token.strip()}
+                    ]
+                })
+                if inv:
+                    cand_id = inv.get("candidate_id")
+                    candidate = self.collection.find_one({"id": cand_id}) if cand_id else inv
+            except Exception:
+                pass
+
+        if not candidate:
+            return {
+                "valid": False,
+                "reason": "not_found",
+                "message": "Invalid or unrecognized interview link. Please verify your invitation URL."
+            }
+
+        # Check status
+        status = candidate.get("status", "Scheduled")
+        if status == "Cancelled":
+            return {
+                "valid": False,
+                "reason": "cancelled",
+                "message": "This interview invitation has been cancelled by the recruiter."
+            }
+
+        if candidate.get("is_used") or status == "Completed":
+            return {
+                "valid": False,
+                "reason": "completed",
+                "message": "This interview has already been completed. Single-use links cannot be retaken."
+            }
+
+        # Check expiration
+        expires_at_str = candidate.get("expires_at")
+        if expires_at_str:
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str)
+                if datetime.utcnow() > expires_at:
+                    return {
+                        "valid": False,
+                        "reason": "expired",
+                        "message": "This interview invitation link has expired. Please contact your recruiter for a new link."
+                    }
+            except Exception:
+                pass
+
+        # Return safe read-only payload (NO scores, NO evaluation, NO token_hash)
+        return {
+            "valid": True,
+            "candidate": {
+                "id": candidate.get("id"),
+                "name": candidate.get("name"),
+                "email": candidate.get("email"),
+                "role": candidate.get("role"),
+                "job_description": candidate.get("job_description", ""),
+                "skills": candidate.get("skills", []),
+                "resume_text": candidate.get("resume_text", ""),
+                "expires_at": candidate.get("expires_at"),
+                "status": candidate.get("status", "Scheduled"),
+                "is_demo": candidate.get("is_demo", False)
+            }
+        }
+
+    def start_interview_by_token(self, raw_token: str) -> Dict[str, Any]:
+        """Mark interview as In Progress upon candidate device consent and start."""
+        val = self.validate_interview_token(raw_token)
+        if not val["valid"]:
+            return val
+
+        cand_info = val["candidate"]
+        cand_id = cand_info["id"]
+        now_str = datetime.utcnow().isoformat()
+
+        self.collection.update_one(
+            {"id": cand_id},
+            {"$set": {"status": "In Progress", "started_at": now_str, "updated_at": now_str}}
+        )
+        return {"success": True, "status": "In Progress", "candidate": cand_info}
+
+    def complete_interview_by_token(self, raw_token: str) -> Dict[str, Any]:
+        """Mark interview as Completed upon completion, locking the link."""
+        token_hash = hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
+        now_str = datetime.utcnow().isoformat()
+
+        self.collection.update_one(
+            {"$or": [{"token_hash": token_hash}, {"token": raw_token.strip()}, {"id": raw_token.strip()}]},
+            {"$set": {"status": "Completed", "is_used": True, "completed_at": now_str, "updated_at": now_str}}
+        )
+        return {"success": True, "status": "Completed"}
+
+    def extend_interview_expiry(self, candidate_id: str, additional_hours: int = 48) -> Dict[str, Any]:
+        """Extend expiry of a scheduled interview."""
+        cand = self.collection.find_one({"id": candidate_id})
+        if not cand:
+            return {"success": False, "error": "Candidate not found"}
+
+        now = datetime.utcnow()
+        try:
+            current_expires = datetime.fromisoformat(cand.get("expires_at"))
+            base_time = max(now, current_expires)
+        except Exception:
+            base_time = now
+
+        new_expires = base_time + timedelta(hours=additional_hours)
+        self.collection.update_one(
+            {"id": candidate_id},
+            {"$set": {"expires_at": new_expires.isoformat(), "updated_at": now.isoformat()}}
+        )
+        return {"success": True, "new_expires_at": new_expires.isoformat()}
+
+    def cancel_interview(self, candidate_id: str) -> Dict[str, Any]:
+        """Cancel a scheduled interview."""
+        now_str = datetime.utcnow().isoformat()
+        self.collection.update_one(
+            {"id": candidate_id},
+            {"$set": {"status": "Cancelled", "updated_at": now_str}}
+        )
+        return {"success": True, "status": "Cancelled"}
 
     def start_or_resume_session(
         self,
@@ -633,8 +890,9 @@ class CandidateService:
         List candidates with server-side filters, search, sorting, pagination,
         and dynamically computed tab counts (BEFORE applying status filter).
         """
-        # Fetch candidates matching base organization filter
+        # Fetch candidates matching base organization filter (strictly exclude demo sessions from recruiter pipeline)
         all_docs = list(self.collection.find({}))
+        all_docs = [c for c in all_docs if not c.get("is_demo")]
         
         # 1. Base filter by organization if specified
         if organization and organization != "all":

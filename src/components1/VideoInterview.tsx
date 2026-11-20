@@ -123,9 +123,25 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
   const rawRole = (typeof window !== "undefined" && localStorage.getItem("user_role")) || "CANDIDATE";
   const userRole = rawRole.toUpperCase();
   const isCandidate = userRole === "CANDIDATE";
+  const isDemo = urlRoomid === "demo-sandbox";
   const storedUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("auth_user") || "null") : null;
   const loggedInName = storedUser?.name || (isCandidate ? "Candidate User" : "Alex Morgan");
   const loggedInEmail = storedUser?.email || "";
+
+  // Token Validation State (Requirement 4 & 5)
+  const [tokenValidationState, setTokenValidationState] = useState<{
+    status: "validating" | "valid" | "invalid";
+    reason?: "not_found" | "cancelled" | "completed" | "expired" | "missing";
+    message?: string;
+  }>({
+    status: isDemo ? "valid" : !urlRoomid ? "invalid" : "validating",
+    reason: !urlRoomid ? "missing" : undefined,
+    message: !urlRoomid ? "Please open the interview link sent by your recruiter." : undefined,
+  });
+
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [cameraChecked, setCameraChecked] = useState(false);
+  const [micChecked, setMicChecked] = useState(false);
 
   // Auto-fill candidate info if logged in as Candidate and not set
   useEffect(() => {
@@ -173,59 +189,103 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
   const [isStarting, setIsStarting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tokenExpired, setTokenExpired] = useState(false);
-  const [tokenUsed, setTokenUsed] = useState(false);
 
-  // Check if urlRoomid is a single-use 48h invitation token
+  // Server-side token validation (Requirement 4: exists, not expired, not cancelled, not completed)
   useEffect(() => {
-    if (!urlRoomid) return;
-    
-    try {
-      const stored = localStorage.getItem("ai_interview_invitations");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const invite = parsed[urlRoomid];
-        if (invite) {
-          if (invite.expires_at_timestamp && Date.now() > invite.expires_at_timestamp) {
-            setTokenExpired(true);
-            setError("This single-use interview invitation has expired (valid for 48 hours). Please contact your recruiter for a new link.");
-            return;
-          }
-          if (invite.is_used) {
-            setTokenUsed(true);
-            setError("This single-use interview link has already been used and completed.");
-            return;
-          }
-          if (invite.candidate_name) setCandidateName(invite.candidate_name);
-          if (invite.candidate_email) setCandidateEmail(invite.candidate_email);
-          if (invite.job_role) setJobTitle(invite.job_role);
-          if (invite.skills && Array.isArray(invite.skills)) setCandidateSkills(invite.skills);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("Could not load invitation token from localStorage:", e);
+    if (!urlRoomid) {
+      setTokenValidationState({
+        status: "invalid",
+        reason: "missing",
+        message: "Please open the interview link sent by your recruiter.",
+      });
+      return;
     }
 
-    if (urlRoomid.startsWith("iv_")) {
-      fetch(`${FASTAPI_BASE_URL}/api/interviews/verify-link/${urlRoomid}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.expired) {
-            setTokenExpired(true);
-            setError(data.error || "This interview invitation has expired.");
-          } else if (data.already_used) {
-            setTokenUsed(true);
-            setError(data.error || "This interview has already been completed.");
-          } else if (data.valid && data.invite) {
-            setCandidateName(data.invite.candidate_name || "");
-            setCandidateEmail(data.invite.candidate_email || "");
-            setJobTitle(data.invite.role || "");
-            if (data.invite.skills) setCandidateSkills(data.invite.skills);
-          }
-        })
-        .catch(() => {});
+    if (urlRoomid === "demo-sandbox") {
+      setCandidateName("Demo Candidate");
+      setCandidateEmail("demo.recruiter@example.com");
+      setJobTitle("Full Stack Developer (Demo Sandbox)");
+      setJobDescription("Full-stack engineering assessment sandbox for recruiter testing.");
+      setCandidateSkills(["React", "Node.js", "System Architecture", "TypeScript"]);
+      setTokenValidationState({ status: "valid" });
+      return;
     }
+
+    interviewService.validateToken(urlRoomid)
+      .then((res) => {
+        if (res.valid && res.candidate) {
+          setCandidateName(res.candidate.name || "");
+          setCandidateEmail(res.candidate.email || "");
+          setJobTitle(res.candidate.role || "");
+          setJobDescription(res.candidate.job_description || "");
+          if (res.candidate.skills && Array.isArray(res.candidate.skills)) {
+            setCandidateSkills(res.candidate.skills);
+          }
+          if (res.candidate.resume_text) {
+            setCandidateResume(res.candidate.resume_text);
+          }
+          setTokenValidationState({ status: "valid" });
+        } else {
+          setTokenValidationState({
+            status: "invalid",
+            reason: res.reason || "not_found",
+            message: res.message || "Invalid or unrecognized interview link.",
+          });
+        }
+      })
+      .catch(() => {
+        // Fallback to client-side localStorage invitation cache if backend is unreachable
+        try {
+          const stored = localStorage.getItem("ai_interview_invitations");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            const invite = parsed[urlRoomid];
+            if (invite) {
+              if (invite.expires_at_timestamp && Date.now() > invite.expires_at_timestamp) {
+                setTokenValidationState({
+                  status: "invalid",
+                  reason: "expired",
+                  message: "This single-use interview invitation has expired. Please contact your recruiter for a new link.",
+                });
+                return;
+              }
+              if (invite.is_used || invite.status === "Completed") {
+                setTokenValidationState({
+                  status: "invalid",
+                  reason: "completed",
+                  message: "This single-use interview link has already been used and completed.",
+                });
+                return;
+              }
+              if (invite.status === "Cancelled") {
+                setTokenValidationState({
+                  status: "invalid",
+                  reason: "cancelled",
+                  message: "This interview invitation has been cancelled by the recruiter.",
+                });
+                return;
+              }
+              setCandidateName(invite.candidate_name || "");
+              setCandidateEmail(invite.candidate_email || "");
+              setJobTitle(invite.job_role || "");
+              setJobDescription(invite.job_description || "");
+              if (invite.skills && Array.isArray(invite.skills)) {
+                setCandidateSkills(invite.skills);
+              }
+              setTokenValidationState({ status: "valid" });
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Could not load fallback invitation token from localStorage:", e);
+        }
+
+        setTokenValidationState({
+          status: "invalid",
+          reason: "not_found",
+          message: "Unable to connect to the server to validate your interview invitation.",
+        });
+      });
   }, [urlRoomid]);
 
   // Voice Interaction state
@@ -523,6 +583,10 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
     setLlmUnavailable(false);
 
     try {
+      if (urlRoomid && urlRoomid !== "demo-sandbox") {
+        await interviewService.startSession(urlRoomid).catch((err) => console.warn("startSession note:", err));
+      }
+
       const response = await interviewService.startInterview({
         candidate_name: nameToUse,
         candidate_email: candidateEmail.trim(),
@@ -642,6 +706,10 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
         if (data.interview_complete || data.is_finished) {
           setInterviewComplete(true);
           setClosingMessage(data.closing_message || data.message || "Thank you, your interview is complete. The recruiter will contact you.");
+
+          if (urlRoomid && urlRoomid !== "demo-sandbox") {
+            interviewService.completeSession(urlRoomid).catch((err) => console.warn("completeSession note:", err));
+          }
 
           // If recruiter view, fetch the compiled background report from database so real scores show up instead of 0/100
           if (!isCandidate && interviewId) {
@@ -768,208 +836,325 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
     setError(null);
   };
 
-  // 1. SETUP VIEW (Before interview starts)
-  if (!interviewStarted) {
+  // Requirement 5: Plain /interview with no token must not start anything.
+  if (!urlRoomid) {
     return (
-      <InterviewLayout
-        candidateName={candidateName || loggedInName}
-        isRecruiter={!isCandidate}
-        onLogout={handleCandidateLogout}
-        maxWidthClass="max-w-2xl"
-      >
-        <div className="flex-1 flex flex-col items-center justify-center w-full">
-            <Card className="w-full max-w-xl shadow-lg border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto w-14 h-14 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-md mb-3">
-              <Bot className="w-8 h-8 text-white" />
+      <InterviewLayout isDemo={false} maxWidthClass="max-w-md">
+        <div className="flex-1 flex flex-col items-center justify-center w-full py-16">
+          <Card className="w-full shadow-lg border-slate-200 bg-white text-center p-8 space-y-5 rounded-2xl">
+            <div className="mx-auto w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center border border-amber-200 text-amber-600 shadow-xs">
+              <AlertCircle className="w-8 h-8" />
             </div>
-            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-              AI Interview Room
-            </CardTitle>
-            <CardDescription className="text-slate-500 dark:text-slate-400">
-              Interactive AI interview powered by Groq and LangGraph
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-4 pt-4">
-            {error && (
-              <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2 text-red-700 dark:text-red-300 text-sm">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium">Connection Error</p>
-                  <p className="text-xs mt-0.5">{error}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <User className="w-4 h-4 text-cyan-600" /> Candidate Name
-              </label>
-              <Input
-                placeholder="Enter your full name"
-                value={candidateName}
-                onChange={(e) => setCandidateName(e.target.value)}
-                disabled={isStarting}
-                className="focus-visible:ring-cyan-500"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Briefcase className="w-4 h-4 text-cyan-600" /> Job Role / Position
-              </label>
-              <Input
-                placeholder="e.g. Full Stack Engineer"
-                value={jobTitle}
-                onChange={(e) => setJobTitle(e.target.value)}
-                disabled={isStarting}
-                className="focus-visible:ring-cyan-500"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-cyan-600" /> Candidate Email
-              </label>
-              <Input
-                type="email"
-                placeholder="candidate@example.com"
-                value={candidateEmail}
-                onChange={(e) => setCandidateEmail(e.target.value)}
-                disabled={isStarting}
-                className="focus-visible:ring-cyan-500"
-              />
-            </div>
-
-            {candidateSkills.length > 0 && (
-              <div className="space-y-1.5 pt-1">
-                <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-cyan-600" /> Parsed Candidate Skills
-                </label>
-                <div className="flex flex-wrap gap-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-800">
-                  {candidateSkills.map((skill, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs px-2 py-0.5">
-                      {skill}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {candidateResume && (
-              <div className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 pt-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Resume text pre-loaded from candidate screening
-              </div>
-            )}
-
-            {tokenExpired && (
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2.5 text-amber-900 text-xs">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
-                <div>
-                  <p className="font-bold text-sm">Invitation Link Expired</p>
-                  <p className="mt-0.5">This interview invitation was valid for 48 hours and has expired. Please contact your recruiter to issue a new single-use invitation link.</p>
-                </div>
-              </div>
-            )}
-            {tokenUsed && (
-              <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2.5 text-blue-900 text-xs">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 text-blue-600 mt-0.5" />
-                <div>
-                  <p className="font-bold text-sm">Interview Already Completed</p>
-                  <p className="mt-0.5">This single-use interview token has already been submitted. Your score and performance evaluation have been delivered to the recruiting team.</p>
-                </div>
-              </div>
-            )}
-
-            <div className="pt-3">
-              <Button
-                onClick={handleStartInterview}
-                disabled={isStarting || !candidateName.trim() || tokenExpired || tokenUsed}
-                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-medium py-2.5 rounded-lg shadow transition-all duration-150 flex items-center justify-center gap-2"
-              >
-                {isStarting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Initializing AI Interviewer...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Start AI Interview
-                    <ArrowRight className="w-4 h-4 ml-1" />
-                  </>
-                )}
-              </Button>
-            </div>
-
-            <div className="text-center pt-2">
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                Connected to FastAPI backend at port 8001
+            <div className="space-y-2">
+              <h1 className="text-xl font-bold text-slate-900">
+                Interview Link Required
+              </h1>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Please open the interview link sent by your recruiter to access your scheduled interview. Direct access without an active assessment invitation is not permitted.
               </p>
             </div>
-          </CardContent>
-        </Card>
+            <div className="pt-2">
+              <Button onClick={() => navigate("/")} className="w-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white text-xs">
+                Return to Home
+              </Button>
+            </div>
+          </Card>
         </div>
       </InterviewLayout>
     );
   }
 
-  // 2. COMPLETION VIEW
+  // Validating Token loading screen
+  if (!isDemo && tokenValidationState.status === "validating") {
+    return (
+      <InterviewLayout isDemo={false} maxWidthClass="max-w-md">
+        <div className="flex-1 flex flex-col items-center justify-center w-full py-20 text-center space-y-4">
+          <Loader2 className="w-10 h-10 animate-spin text-[var(--primary)] mx-auto" />
+          <h2 className="text-base font-bold text-slate-800">Verifying Interview Invitation...</h2>
+          <p className="text-xs text-slate-500">Authenticating single-use access token with backend</p>
+        </div>
+      </InterviewLayout>
+    );
+  }
+
+  // Requirement 4: Invalid, expired, cancelled, or used links
+  if (!isDemo && tokenValidationState.status === "invalid") {
+    const reason = tokenValidationState.reason;
+    return (
+      <InterviewLayout isDemo={false} maxWidthClass="max-w-md">
+        <div className="flex-1 flex flex-col items-center justify-center w-full py-16">
+          <Card className="w-full shadow-lg border-slate-200 bg-white text-center p-8 space-y-5 rounded-2xl">
+            <div className="mx-auto w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center border border-red-200 text-red-600 shadow-xs">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-xl font-bold text-slate-900">
+                {reason === "expired"
+                  ? "Invitation Link Expired"
+                  : reason === "completed"
+                  ? "Interview Already Completed"
+                  : reason === "cancelled"
+                  ? "Invitation Cancelled"
+                  : "Invalid Interview Link"}
+              </h1>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {tokenValidationState.message ||
+                  "This interview link cannot be used. Please reach out to your recruiter for an updated invitation."}
+              </p>
+            </div>
+            <div className="pt-2">
+              <Button onClick={() => navigate("/")} className="w-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white text-xs">
+                Return to Home
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </InterviewLayout>
+    );
+  }
+
+  // 1. SETUP VIEW (Before interview starts: Device check + Read-only Info + Consent)
+  if (!interviewStarted) {
+    return (
+      <InterviewLayout
+        candidateName={candidateName}
+        isRecruiter={false}
+        isDemo={isDemo}
+        onLogout={handleCandidateLogout}
+        maxWidthClass="max-w-2xl"
+      >
+        <div className="flex-1 flex flex-col items-center justify-center w-full">
+          <Card className="w-full max-w-xl shadow-lg border-slate-200 bg-white">
+            <CardHeader className="text-center pb-2">
+              <div className="mx-auto w-14 h-14 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-md mb-3">
+                <Bot className="w-8 h-8 text-white" />
+              </div>
+              <CardTitle className="text-2xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+                {isDemo ? "AI Interview Sandbox (Demo)" : "Candidate Assessment Verification"}
+              </CardTitle>
+              <CardDescription className="text-slate-500">
+                {isDemo ? "Recruiter test room (excluded from candidate records & KPIs)" : "Please verify your audio/video and provide consent before beginning."}
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-4 pt-4">
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2 text-red-700 text-sm">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Connection Issue</p>
+                    <p className="text-xs mt-0.5">{error}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Read-Only Candidate Information Card (Requirement 4) */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-cyan-600" /> Candidate Name
+                  </span>
+                  <span className="font-bold text-slate-800">{candidateName || "Candidate"}</span>
+                </div>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-cyan-600" /> Candidate Email
+                  </span>
+                  <span className="font-mono text-slate-800">{candidateEmail || "—"}</span>
+                </div>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 text-cyan-600" /> Target Job Role
+                  </span>
+                  <span className="font-bold text-cyan-700">{jobTitle || "Full Stack Developer"}</span>
+                </div>
+                {jobDescription && (
+                  <div className="py-1">
+                    <span className="text-slate-500 font-semibold block mb-0.5">Role Focus / Description:</span>
+                    <p className="text-slate-700 leading-relaxed italic bg-white p-2 rounded border border-slate-200/60">
+                      {jobDescription}
+                    </p>
+                  </div>
+                )}
+                {candidateSkills.length > 0 && (
+                  <div className="pt-1">
+                    <span className="text-slate-500 font-semibold block mb-1">Key Focus Skills:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {candidateSkills.map((skill, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-[11px] px-2 py-0.5 bg-white border border-slate-200">
+                          {skill}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Requirement 4: Device Check (Camera & Microphone) */}
+              <div className="p-4 rounded-xl bg-sky-50/60 border border-sky-100 space-y-3">
+                <span className="text-xs font-bold text-sky-950 uppercase tracking-wider block">
+                  Hardware & Device Verification
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Camera Check */}
+                  <div className="p-3 bg-white rounded-lg border border-sky-100 flex flex-col justify-between gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-sky-600" /> Camera
+                      </span>
+                      {cameraStatus === 'active' ? (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Ready ✓
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium text-slate-500">Unchecked</span>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        startCamera();
+                        setCameraChecked(true);
+                      }}
+                      className="text-xs h-8 border-sky-200 text-sky-800 hover:bg-sky-50"
+                    >
+                      {cameraStatus === 'active' ? "Camera Verified ✓" : "Test Camera"}
+                    </Button>
+                  </div>
+
+                  {/* Microphone Check */}
+                  <div className="p-3 bg-white rounded-lg border border-sky-100 flex flex-col justify-between gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                        <Mic className="w-3.5 h-3.5 text-sky-600" /> Microphone
+                      </span>
+                      {micChecked ? (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Ready ✓
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium text-slate-500">Unchecked</span>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setMicChecked(true);
+                        toggleListening();
+                      }}
+                      className="text-xs h-8 border-sky-200 text-sky-800 hover:bg-sky-50"
+                    >
+                      {micChecked ? "Microphone Verified ✓" : "Test Microphone"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement 4: Consent Checkbox */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="candidate-consent"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer"
+                />
+                <label htmlFor="candidate-consent" className="text-xs text-slate-700 leading-relaxed cursor-pointer select-none">
+                  <strong className="text-slate-900 block font-semibold mb-0.5">Assessment Consent & Integrity Pledge</strong>
+                  I confirm that I am <strong className="text-slate-900">{candidateName || "the candidate"}</strong>. I consent to an AI-assisted video and audio assessment and agree to answer all questions independently without unauthorized assistance.
+                </label>
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  onClick={handleStartInterview}
+                  disabled={isStarting || !consentChecked}
+                  className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-medium py-2.5 rounded-lg shadow transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isStarting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Initializing AI Interviewer...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Begin AI Interview
+                      <ArrowRight className="w-4 h-4 ml-1" />
+                    </>
+                  )}
+                </Button>
+                {!consentChecked && (
+                  <p className="text-[11px] text-center text-slate-400 mt-1.5">
+                    Please review and check the consent box above to begin.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </InterviewLayout>
+    );
+  }
+
+  // 2. COMPLETION VIEW (Requirement 8: Candidate-facing responses never include scores or evaluation)
   if (interviewComplete) {
-    if (isCandidate) {
+    if (!isDemo) {
       return (
         <InterviewLayout
-          candidateName={candidateName || loggedInName}
+          candidateName={candidateName}
           isRecruiter={false}
-          onLogout={handleCandidateLogout}
+          isDemo={false}
           maxWidthClass="max-w-2xl"
         >
           <div className="w-full py-12 flex justify-center">
-            <Card className="w-full bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden text-center p-8 sm:p-10 space-y-6">
-              <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm animate-in zoom-in-50 duration-300">
+            <Card className="w-full bg-white shadow-xl border border-slate-200 rounded-2xl overflow-hidden text-center p-8 sm:p-10 space-y-6">
+              <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-sm animate-in zoom-in-50 duration-300">
                 <CheckCircle2 className="w-12 h-12" />
               </div>
 
               <div className="space-y-2">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-                  Interview Complete
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                  Interview Submitted Successfully
                 </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-                  Thank you, <strong className="text-slate-800 dark:text-slate-200">{candidateName || "Candidate"}</strong>! Your interview session has been successfully submitted to the recruiting team.
+                <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
+                  Thank you, <strong className="text-slate-800">{candidateName || "Candidate"}</strong>! Your interview responses have been securely delivered to the recruiting team.
                 </p>
               </div>
 
-              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-5 border border-slate-200 dark:border-slate-700/80 text-left space-y-3 max-w-md mx-auto text-xs">
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-700/60">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Position</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{jobTitle || "Full Stack Developer"}</span>
+              <div className="bg-slate-50 rounded-xl p-5 border border-slate-200 text-left space-y-3 max-w-md mx-auto text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-500 font-medium">Position</span>
+                  <span className="font-semibold text-slate-800">{jobTitle || "Engineering Role"}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-700/60">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Submission Date</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{new Date().toLocaleDateString()}</span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-500 font-medium">Candidate Email</span>
+                  <span className="font-semibold text-slate-800">{candidateEmail}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-slate-700/60">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Questions Completed</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{questionNumber || totalQuestions} Questions</span>
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-500 font-medium">Submission Timestamp</span>
+                  <span className="font-semibold text-slate-800">{new Date().toLocaleString()}</span>
                 </div>
                 <div className="flex items-center justify-between py-1">
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">Status</span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-[11px]">
-                    Submitted & Under Review
+                  <span className="text-slate-500 font-medium">Single-Use Link Status</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700 font-mono font-bold text-[11px]">
+                    Closed & Locked
                   </span>
                 </div>
               </div>
 
-              <div className="p-4 bg-blue-50/80 dark:bg-blue-950/30 rounded-xl border border-blue-100 dark:border-blue-900/40 text-xs text-blue-800 dark:text-blue-300 max-w-md mx-auto leading-relaxed">
-                The recruiter will review your responses and reach out to you directly regarding the next steps in the hiring process.
+              <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 text-xs text-sky-900 max-w-md mx-auto leading-relaxed">
+                The recruiting team will review your complete interview and contact you regarding next steps in the hiring process.
               </div>
 
               <div className="pt-2">
                 <Button
                   onClick={() => navigate('/')}
-                  className="w-full sm:w-auto px-8 bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-2.5 rounded-lg shadow-sm"
+                  className="w-full sm:w-auto px-8 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white font-medium py-2.5 rounded-lg shadow-sm"
                 >
                   Return to Home
                 </Button>

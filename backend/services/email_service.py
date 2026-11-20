@@ -282,3 +282,95 @@ Interview ID: {interview_id}
                 "error": error_msg,
                 "message": "Email sending failed"
             }
+
+    def send_ai_interview_link(
+        self,
+        to_email: str,
+        candidate_name: str,
+        job_title: str,
+        interview_url: str,
+        expires_at: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Send single-use AI Interview invitation link to candidate.
+        If SMTP is not configured, logs the dispatch gracefully and returns success.
+        """
+        logger.info(f"📧 Preparing AI Interview invitation for {to_email} ({candidate_name})")
+        subject = f"🎯 Your AI Interview Link: {job_title}"
+        expiry_text = f"Valid until {expires_at}" if expires_at else "Single-use link"
+
+        # If SMTP is not configured, gracefully simulate and log
+        if not self.smtp_username or not self.smtp_password:
+            logger.info(f"📬 [EMAIL SERVICE] SMTP unconfigured - Simulated invitation to {to_email} for {job_title}: {interview_url}")
+            return {
+                "success": True,
+                "message": f"Interview invitation link prepared and logged for {to_email}",
+                "simulated": True,
+                "recipient": to_email,
+                "interview_url": interview_url
+            }
+
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['From'] = self.sender_email
+            msg['To'] = to_email
+            msg['Subject'] = subject
+
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; padding: 20px; }}
+    .card {{ max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+    .header {{ background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; padding: 32px 24px; text-align: center; }}
+    .content {{ padding: 32px 24px; }}
+    .btn {{ display: inline-block; background: #0284c7; color: white !important; font-weight: 600; text-decoration: none; padding: 14px 28px; border-radius: 8px; margin: 20px 0; }}
+    .footer {{ padding: 20px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center; }}
+    .badge {{ display: inline-block; padding: 4px 10px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 12px; font-weight: 600; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1 style="margin:0; font-size: 22px;">AI Video Interview Invitation</h1>
+      <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 14px;">Position: {job_title}</p>
+    </div>
+    <div class="content">
+      <p>Hello <strong>{candidate_name}</strong>,</p>
+      <p>You have been invited to complete your autonomous AI technical assessment for the <strong>{job_title}</strong> role.</p>
+      <p>This is an automated, conversational session designed to evaluate your domain knowledge, problem-solving, and system design experience at your own pace.</p>
+      
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="{interview_url}" class="btn">Start AI Interview &rarr;</a>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b;">
+        🔒 <strong>Note:</strong> This is a personalized, single-use link. {expiry_text}. Once you submit the assessment, the link will automatically expire.
+      </p>
+    </div>
+    <div class="footer">
+      Sent via AI Interview Agent Platform &bull; Please do not forward this confidential link.
+    </div>
+  </div>
+</body>
+</html>"""
+            msg.attach(MIMEText(html, 'html'))
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.smtp_username, self.smtp_password)
+                server.send_message(msg)
+
+            logger.info(f"✅ AI Interview email delivered to {to_email}")
+            return {
+                "success": True,
+                "message": f"Invitation email sent to {to_email}",
+                "recipient": to_email
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to send AI interview email to {to_email}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Could not deliver email: {str(e)}"
+            }
