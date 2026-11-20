@@ -129,10 +129,11 @@ app = FastAPI(lifespan=lifespan)
 
 # Environment detection
 APP_ENV = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower()
-IS_PRODUCTION = APP_ENV in ("production", "prod")
+IS_PRODUCTION = APP_ENV in ("production", "prod") or os.getenv("RENDER") == "true" or bool(os.getenv("RENDER_SERVICE_ID"))
 
 # Health endpoint for full system check (Backend, DB, LLM)
 @app.get("/api/health")
+@app.get("/health")
 async def api_health_check():
     """Production health check for backend, MongoDB, and Groq LLM."""
     try:
@@ -426,6 +427,17 @@ async def require_recruiter_role(
         token = auth_token
 
     user = ACTIVE_AUTH_SESSIONS.get(token) if token else None
+    if not user and token:
+        try:
+            from db.mongo_client import get_collection
+            sessions = get_collection("sessions")
+            db_sess = sessions.find_one({"token": token})
+            if db_sess:
+                user = db_sess
+                ACTIVE_AUTH_SESSIONS[token] = db_sess
+        except Exception:
+            pass
+
     role = user.get("role") if user else (x_user_role or "")
     role = role.upper().strip()
 
@@ -500,6 +512,12 @@ async def api_auth_login(req: LoginRequest, request: Request, response: Response
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
     ACTIVE_AUTH_SESSIONS[token] = session_data
+    try:
+        from db.mongo_client import get_collection
+        sessions = get_collection("sessions")
+        sessions.update_one({"token": token}, {"$set": dict(session_data)}, upsert=True)
+    except Exception:
+        pass
 
     # Set secure httpOnly cookie (SameSite='none' for cross-origin production, 'lax' for dev)
     response.set_cookie(
@@ -564,7 +582,7 @@ async def api_auth_register(req: RegisterRequest, response: Response):
         logger.warning(f"Could not persist candidate to MongoDB: {e}")
 
     token = secrets.token_hex(24)
-    ACTIVE_AUTH_SESSIONS[token] = {
+    session_payload = {
         "token": token,
         "user_id": new_id,
         "email": clean_email,
@@ -573,6 +591,13 @@ async def api_auth_register(req: RegisterRequest, response: Response):
         "company": req.company,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
+    ACTIVE_AUTH_SESSIONS[token] = session_payload
+    try:
+        from db.mongo_client import get_collection
+        sessions = get_collection("sessions")
+        sessions.update_one({"token": token}, {"$set": dict(session_payload)}, upsert=True)
+    except Exception:
+        pass
 
     response.set_cookie(
         key="auth_token",
@@ -1273,18 +1298,6 @@ async def shortlist_candidates(
         "shortlisted_ids": shortlisted_ids,
         "message": f"Successfully shortlisted {count} candidate(s)."
     }
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint to verify the server is running"""
-    try:
-        return {
-            "status": "healthy",
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================
