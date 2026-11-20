@@ -181,7 +181,7 @@ if IS_PRODUCTION:
         allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
     else:
         allowed_origins = ["https://ai-interview-agent-three-taupe.vercel.app"]
-    allow_origin_regex = None
+    allow_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$|^https://.*\.vercel\.app$|^https://.*\.onrender\.com$"
 else:
     allowed_origins = [
         "http://localhost:3000",
@@ -1052,6 +1052,7 @@ class ScheduleInterviewRequest(BaseModel):
 CreateInterviewLinkRequest = ScheduleInterviewRequest
 
 class SendInterviewEmailRequest(BaseModel):
+    candidate_id: Optional[str] = None
     candidate_email: str
     candidate_name: str
     job_title: str
@@ -1126,6 +1127,7 @@ async def send_interview_email_endpoint(
 ):
     """
     Recruiter sends candidate invitation email with interview link.
+    Updates candidate email_status in database to 'sent' or 'failed'.
     """
     from services.email_service import EmailService
     email_service = EmailService()
@@ -1137,6 +1139,26 @@ async def send_interview_email_endpoint(
         expires_at=req.expires_at
     )
     logger.info(f"📧 Dispatched invitation email to {req.candidate_email}: {result}")
+
+    # Update candidate email status in database
+    try:
+        service = get_candidate_service()
+        candidate_identifier = req.candidate_id or req.candidate_email
+        if result.get("success"):
+            service.update_email_status(
+                candidate_identifier=candidate_identifier,
+                status="sent",
+                sent_at=result.get("sent_at")
+            )
+        else:
+            service.update_email_status(
+                candidate_identifier=candidate_identifier,
+                status="failed",
+                error_message=result.get("error") or result.get("message")
+            )
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to update candidate email status: {e}")
+
     return result
 
 @app.patch("/api/interviews/{candidate_id}/extend-expiry")

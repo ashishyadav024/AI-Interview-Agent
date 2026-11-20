@@ -848,9 +848,12 @@ const RecruiterDashboard: React.FC = () => {
   const [newInterviewExpiryHours, setNewInterviewExpiryHours] = useState<number>(48);
   const [generatedInterviewLink, setGeneratedInterviewLink] = useState<string | null>(null);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [generatedCandidateId, setGeneratedCandidateId] = useState<string | null>(null);
   const [generatedExpiresAt, setGeneratedExpiresAt] = useState<string | null>(null);
   const [isLinkCopied, setIsLinkCopied] = useState<boolean>(false);
-  const [isEmailSent, setIsEmailSent] = useState<boolean>(false);
+  const [isMessageCopied, setIsMessageCopied] = useState<boolean>(false);
+  const [emailSendingState, setEmailSendingState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [emailErrorMessage, setEmailErrorMessage] = useState<string | null>(null);
   const [isCreatingLink, setIsCreatingLink] = useState<boolean>(false);
 
   // Resume Analyzer Modal state (Requirement 3: PDF/DOCX, max 5MB, per-file tracking)
@@ -1102,21 +1105,41 @@ const RecruiterDashboard: React.FC = () => {
   const handleResendEmail = async (cand: CandidateRecord) => {
     const linkMap = JSON.parse(localStorage.getItem("ai_interview_links_map") || "{}");
     const link = linkMap[cand.id] || linkMap[cand.email] || `${window.location.origin}/interview/${cand.id}`;
+    
+    toast({
+      title: "Dispatching Invitation Email...",
+      description: `Sending interview link to ${cand.email}.`,
+    });
+
     const res = await interviewService.sendInviteEmail({
+      candidate_id: cand.id,
       candidate_email: cand.email,
       candidate_name: cand.name,
       job_title: cand.role,
       interview_url: link,
     });
+
     if (res.success) {
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === cand.id ? { ...c, email_status: "sent", email_sent_at: new Date().toISOString(), email_error: undefined } : c
+        )
+      );
       toast({
         title: "Invitation Email Dispatched",
         description: `Formal interview invitation sent to ${cand.email}.`,
       });
     } else {
+      const errReason = res.error || "Cannot reach the server";
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === cand.id ? { ...c, email_status: "failed", email_error: errReason } : c
+        )
+      );
       toast({
-        title: "Email Dispatch Status",
-        description: res.error || `Invitation logged for ${cand.email}.`,
+        variant: "destructive",
+        title: "Email Dispatch Failed",
+        description: errReason,
       });
     }
   };
@@ -1425,8 +1448,11 @@ const RecruiterDashboard: React.FC = () => {
       setGeneratedToken(token);
       setGeneratedInterviewLink(generatedUrl);
       setGeneratedExpiresAt(expiresAt);
+      setGeneratedCandidateId(candidateId);
       setIsLinkCopied(false);
-      setIsEmailSent(false);
+      setIsMessageCopied(false);
+      setEmailSendingState("idle");
+      setEmailErrorMessage(null);
 
       // Cache mapping so table action buttons can copy link and resend email
       try {
@@ -1450,6 +1476,7 @@ const RecruiterDashboard: React.FC = () => {
           expires_at_timestamp: Date.now() + newInterviewExpiryHours * 3600 * 1000,
           is_used: false,
           status: "Scheduled",
+          email_status: "pending"
         };
         localStorage.setItem("ai_interview_invitations", JSON.stringify(storedInvites));
       } catch (storageErr) {
@@ -1473,6 +1500,9 @@ const RecruiterDashboard: React.FC = () => {
         initials,
         avatarBg: "bg-sky-50 text-sky-700",
         scheduledTime: `Valid for ${newInterviewExpiryHours}h`,
+        email_status: "pending",
+        email_sent_at: undefined,
+        email_error: undefined,
       };
 
       const updated = [newCandidateRecord, ...candidates.filter((c) => c.email !== email)];
@@ -1509,9 +1539,39 @@ const RecruiterDashboard: React.FC = () => {
     setTimeout(() => setIsLinkCopied(false), 3000);
   };
 
+  const handleCopyInvitationMessage = async () => {
+    if (!generatedInterviewLink) return;
+    const targetName = candidateSelectMode === "existing"
+      ? candidates.find((c) => c.id === newInterviewCandidateId)?.name || "Candidate"
+      : newInterviewCandidateName || "Candidate";
+    const expiryFormatted = generatedExpiresAt 
+      ? new Date(generatedExpiresAt).toLocaleString() 
+      : `within ${newInterviewExpiryHours} hours`;
+
+    const inviteText = `Hello ${targetName},\n\nYou have been invited to complete your AI Technical Interview for the ${newInterviewRole} position.\n\n🔗 Assessment Link: ${generatedInterviewLink}\n⏰ Link Expiry: ${expiryFormatted}\n\nInstructions:\n• Please open the link using Google Chrome or Microsoft Edge on a laptop or desktop.\n• Grant camera and microphone permissions when prompted for interactive questioning.\n• Find a quiet, well-lit space with a reliable internet connection.\n• This is a private, single-use link that automatically locks once you complete your session.\n\nBest regards,\nRecruitment Team`;
+
+    try {
+      await navigator.clipboard.writeText(inviteText);
+      setIsMessageCopied(true);
+      toast({
+        title: "Invitation Message Copied!",
+        description: "Formatted invitation text copied to clipboard for WhatsApp, Slack, or email.",
+      });
+      setTimeout(() => setIsMessageCopied(false), 3000);
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Copy Failed",
+        description: "Could not copy message to clipboard.",
+      });
+    }
+  };
+
   const handleSendEmailInvite = async () => {
     if (!generatedInterviewLink) return;
-    setIsEmailSent(true);
+    setEmailSendingState("sending");
+    setEmailErrorMessage(null);
+
     const targetEmail = candidateSelectMode === "existing"
       ? candidates.find((c) => c.id === newInterviewCandidateId)?.email || "candidate@example.com"
       : newInterviewCandidateEmail;
@@ -1520,6 +1580,7 @@ const RecruiterDashboard: React.FC = () => {
       : newInterviewCandidateName;
 
     const res = await interviewService.sendInviteEmail({
+      candidate_id: generatedCandidateId || undefined,
       candidate_email: targetEmail,
       candidate_name: targetName,
       job_title: newInterviewRole,
@@ -1528,14 +1589,34 @@ const RecruiterDashboard: React.FC = () => {
     });
 
     if (res.success) {
+      setEmailSendingState("sent");
+      const sentTime = new Date().toISOString();
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === generatedCandidateId || c.email === targetEmail
+            ? { ...c, email_status: "sent", email_sent_at: sentTime, email_error: undefined }
+            : c
+        )
+      );
       toast({
         title: "Invitation Email Dispatched",
         description: `Formal interview invitation sent to ${targetEmail}.`,
       });
     } else {
+      setEmailSendingState("failed");
+      const errReason = res.error || "Cannot reach the email server";
+      setEmailErrorMessage(errReason);
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === generatedCandidateId || c.email === targetEmail
+            ? { ...c, email_status: "failed", email_error: errReason }
+            : c
+        )
+      );
       toast({
-        title: "Email Dispatch Status",
-        description: res.error || `Invitation logged for ${targetEmail}.`,
+        variant: "destructive",
+        title: "Email Dispatch Failed",
+        description: errReason,
       });
     }
   };
@@ -2360,7 +2441,34 @@ const RecruiterDashboard: React.FC = () => {
 
                         {/* Split Column 2: Status (Scheduled | In Progress | Completed) */}
                         <td className="py-3 px-3 whitespace-nowrap">
-                          <StatusBadge status={cand.status} />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <StatusBadge status={cand.status} />
+                            {cand.status === "Scheduled" && (
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-colors ${
+                                  cand.email_status === "sent"
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    : cand.email_status === "failed"
+                                    ? "bg-red-50 text-red-800 border-red-200"
+                                    : "bg-slate-100 text-slate-600 border-slate-200"
+                                }`}
+                                title={
+                                  cand.email_status === "failed"
+                                    ? cand.email_error || "Email delivery failed"
+                                    : cand.email_status === "sent"
+                                    ? `Invitation delivered${cand.email_sent_at ? " at " + new Date(cand.email_sent_at).toLocaleTimeString() : ""}`
+                                    : "Email invitation not yet dispatched"
+                                }
+                              >
+                                <span className="material-symbols-outlined text-[12px]">
+                                  {cand.email_status === "sent" ? "mark_email_read" : cand.email_status === "failed" ? "error" : "schedule_send"}
+                                </span>
+                                <span>
+                                  {cand.email_status === "sent" ? "Email Sent" : cand.email_status === "failed" ? "Email Failed" : "Email Pending"}
+                                </span>
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* AI Score & Verdict + Inline Flag Icon & Popover */}
@@ -2594,11 +2702,21 @@ const RecruiterDashboard: React.FC = () => {
                                     e.stopPropagation();
                                     handleResendEmail(cand);
                                   }}
-                                  className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-sky-700 hover:bg-sky-50 border border-[var(--border)] transition-colors shadow-2xs cursor-pointer active:scale-95 bg-white"
-                                  title="Resend Email Invitation"
+                                  className={`w-8 h-8 rounded-lg inline-flex items-center justify-center border transition-colors shadow-2xs cursor-pointer active:scale-95 bg-white ${
+                                    cand.email_status === "failed"
+                                      ? "text-red-700 hover:bg-red-50 border-red-300"
+                                      : "text-sky-700 hover:bg-sky-50 border-[var(--border)]"
+                                  }`}
+                                  title={
+                                    cand.email_status === "failed"
+                                      ? `Retry Invitation Email (Failed: ${cand.email_error || "Delivery error"})`
+                                      : "Resend Email Invitation"
+                                  }
                                   aria-label="Resend Email Invitation"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">mail</span>
+                                  <span className="material-symbols-outlined text-[16px]">
+                                    {cand.email_status === "failed" ? "refresh" : "mail"}
+                                  </span>
                                 </button>
                                 <button
                                   type="button"
@@ -4740,33 +4858,77 @@ const RecruiterDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Direct Actions: Email Invite & Done (Recruiter stays on dashboard) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Sharing & Dispatch Actions (Recruiter stays on dashboard) */}
+                  <div className="flex flex-col gap-2.5 pt-1">
+                    {/* Fallback Action: Ready-to-paste message for WhatsApp/Slack */}
                     <button
-                      onClick={handleSendEmailInvite}
-                      className={`h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all shadow-sm ${
-                        isEmailSent
+                      type="button"
+                      onClick={handleCopyInvitationMessage}
+                      className={`h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 border transition-all shadow-sm ${
+                        isMessageCopied
                           ? "bg-emerald-50 border-emerald-300 text-emerald-800"
                           : "bg-white border-[var(--border)] hover:bg-[var(--surface-alt)] text-[var(--text)]"
                       }`}
                     >
                       <span className="material-symbols-outlined text-[18px] text-[var(--primary)]">
-                        {isEmailSent ? "mark_email_read" : "mail"}
+                        {isMessageCopied ? "done_all" : "chat"}
                       </span>
-                      <span>{isEmailSent ? "Email Dispatched!" : "Send Email Invitation"}</span>
+                      <span>
+                        {isMessageCopied ? "Invitation Message Copied!" : "Copy Full Invitation Message (WhatsApp / Slack)"}
+                      </span>
                     </button>
 
-                    <button
-                      onClick={() => {
-                        setIsNewInterviewModalOpen(false);
-                        setGeneratedInterviewLink(null);
-                        setGeneratedToken(null);
-                      }}
-                      className="h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white transition-all shadow-sm"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">done_all</span>
-                      <span>Done (Back to Candidates)</span>
-                    </button>
+                    {/* Email Dispatch State Machine */}
+                    {emailSendingState === "idle" && (
+                      <button
+                        type="button"
+                        onClick={handleSendEmailInvite}
+                        className="h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 bg-white border border-[var(--border)] hover:bg-[var(--surface-alt)] text-[var(--text)] transition-all shadow-sm cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px] text-[var(--primary)]">mail</span>
+                        <span>Send Email Invitation to Candidate</span>
+                      </button>
+                    )}
+
+                    {emailSendingState === "sending" && (
+                      <button
+                        type="button"
+                        disabled
+                        className="h-10 px-3.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 bg-slate-50 border border-slate-200 text-slate-500 cursor-not-allowed shadow-xs"
+                      >
+                        <span className="w-3.5 h-3.5 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+                        <span>Sending invitation email...</span>
+                      </button>
+                    )}
+
+                    {emailSendingState === "sent" && (
+                      <div className="h-10 px-3.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-semibold flex items-center justify-center gap-2 shadow-xs">
+                        <span className="material-symbols-outlined text-[18px] text-emerald-600">mark_email_read</span>
+                        <span>Email Sent Successfully ✓</span>
+                      </div>
+                    )}
+
+                    {emailSendingState === "failed" && (
+                      <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex flex-col gap-2 shadow-xs">
+                        <div className="flex items-start gap-2">
+                          <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0 mt-0.5">error</span>
+                          <div className="flex flex-col text-left">
+                            <span className="text-xs font-bold text-red-800">Email Delivery Failed</span>
+                            <span className="text-[11px] text-red-600 font-mono mt-0.5 break-words">
+                              {emailErrorMessage || "Failed to deliver email"}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSendEmailInvite}
+                          className="self-end h-7 px-3 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">refresh</span>
+                          <span>Retry Email</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -4774,35 +4936,55 @@ const RecruiterDashboard: React.FC = () => {
 
             {/* Modal Footer */}
             <div className="p-4 bg-white border-t border-[var(--border)] flex items-center justify-between">
-              <button
-                onClick={() => {
-                  setIsNewInterviewModalOpen(false);
-                  setGeneratedInterviewLink(null);
-                  setGeneratedToken(null);
-                }}
-                className="px-4 py-2 text-xs text-[var(--text-muted)] hover:underline font-semibold"
-              >
-                {generatedInterviewLink ? "Done" : "Cancel"}
-              </button>
-
-              {!generatedInterviewLink && (
+              {generatedInterviewLink ? (
                 <button
-                  disabled={isCreatingLink}
-                  onClick={handleCreateInterviewLink}
-                  className="h-9 px-5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
+                  type="button"
+                  onClick={() => {
+                    setIsNewInterviewModalOpen(false);
+                    setGeneratedInterviewLink(null);
+                    setGeneratedToken(null);
+                    setGeneratedCandidateId(null);
+                    setEmailSendingState("idle");
+                    setEmailErrorMessage(null);
+                  }}
+                  className="ml-auto h-9 px-6 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                 >
-                  {isCreatingLink ? (
-                    <>
-                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Generating Secure Link...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[16px]">link</span>
-                      <span>Create Single-Use Link</span>
-                    </>
-                  )}
+                  <span className="material-symbols-outlined text-[16px]">done</span>
+                  <span>Done</span>
                 </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsNewInterviewModalOpen(false);
+                      setGeneratedInterviewLink(null);
+                      setGeneratedToken(null);
+                      setGeneratedCandidateId(null);
+                    }}
+                    className="px-4 py-2 text-xs text-[var(--text-muted)] hover:underline font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    disabled={isCreatingLink}
+                    onClick={handleCreateInterviewLink}
+                    className="h-9 px-5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
+                  >
+                    {isCreatingLink ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Generating Secure Link...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[16px]">link</span>
+                        <span>Create Single-Use Link</span>
+                      </>
+                    )}
+                  </button>
+                </>
               )}
             </div>
           </div>

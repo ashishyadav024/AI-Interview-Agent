@@ -205,6 +205,58 @@ class ResilientStoreCollection:
             self._write_data(data)
         return UpdateResult(1 if matched else 0, modified)
 
+    def update_many(self, filter_dict: Dict[str, Any], update: Dict[str, Any], upsert: bool = False) -> UpdateResult:
+        data = self._read_data()
+        matched = 0
+        modified = 0
+
+        for idx, doc in enumerate(data):
+            if self._match_filter(doc, filter_dict):
+                matched += 1
+                updated = dict(doc)
+                if "$set" in update:
+                    for sk, sv in update["$set"].items():
+                        updated[sk] = sv
+                if "$push" in update:
+                    for pk, pv in update["$push"].items():
+                        curr_list = updated.get(pk, [])
+                        if not isinstance(curr_list, list):
+                            curr_list = []
+                        curr_list.append(pv)
+                        updated[pk] = curr_list
+                if "$inc" in update:
+                    for ik, iv in update["$inc"].items():
+                        updated[ik] = updated.get(ik, 0) + iv
+                data[idx] = updated
+                modified += 1
+
+        if matched == 0 and upsert:
+            new_doc = dict(filter_dict)
+            if "$set" in update:
+                new_doc.update(update["$set"])
+            if "_id" not in new_doc:
+                new_doc["_id"] = str(uuid.uuid4())
+            data.append(new_doc)
+            self._write_data(data)
+            return UpdateResult(0, 1, upserted_id=new_doc["_id"])
+
+        if modified:
+            self._write_data(data)
+        return UpdateResult(matched, modified)
+
+    def delete_many(self, filter_dict: Dict[str, Any]) -> DeleteResult:
+        data = self._read_data()
+        new_data = []
+        deleted = 0
+        for doc in data:
+            if self._match_filter(doc, filter_dict):
+                deleted += 1
+                continue
+            new_data.append(doc)
+        if deleted:
+            self._write_data(new_data)
+        return DeleteResult(deleted)
+
     def delete_one(self, filter_dict: Dict[str, Any]) -> DeleteResult:
         data = self._read_data()
         new_data = []

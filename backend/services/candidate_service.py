@@ -12,8 +12,10 @@ Handles:
 
 import logging
 import math
+import os
 import uuid
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
@@ -283,6 +285,19 @@ INITIAL_SEED_CANDIDATES = [
 ]
 
 
+def get_public_app_url() -> str:
+    """Return public application URL from environment or production fallback (never localhost in production)."""
+    env_url = (os.getenv("PUBLIC_APP_URL") or os.getenv("APP_URL") or "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+
+    app_env = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower()
+    is_prod = app_env in ("production", "prod") or bool(os.getenv("RENDER")) or bool(os.getenv("VERCEL"))
+    if is_prod:
+        return "https://ai-interview-agent-three-taupe.vercel.app"
+    return "http://localhost:3000"
+
+
 class CandidateService:
     """Service for candidate lifecycle & persistence operations"""
 
@@ -325,20 +340,22 @@ class CandidateService:
     ) -> Dict[str, Any]:
         """
         Schedule an interview with status 'Scheduled'.
-        Generates a cryptographically secure random token, hashes it with SHA-256,
-        and stores ONLY the token hash in the database.
+        Generates a cryptographically secure random token (secrets.token_urlsafe(32)),
+        hashes it with SHA-256, and stores ONLY the token hash in the database.
         The raw token is only returned to the caller to generate the candidate link.
         """
         now = datetime.utcnow()
         expires_at = now + timedelta(hours=expires_in_hours)
         
-        # Cryptographically secure random token (raw)
-        raw_token = f"iv_{secrets.token_urlsafe(32)}"
+        # Cryptographically secure random token (raw 32-byte urlsafe string)
+        raw_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
         interview_id = f"cand-{secrets.token_hex(4)}"
         initials = "".join([part[0] for part in candidate_name.split() if part])[:2].upper() or "CD"
         skills = skills or ["Problem Solving", "System Architecture", "Domain Competence"]
+        public_url = get_public_app_url()
+        full_interview_url = f"{public_url}/interview/{raw_token}"
 
         candidate_doc = {
             "id": interview_id,
@@ -371,6 +388,9 @@ class CandidateService:
             "expires_in_hours": expires_in_hours,
             "is_used": False,
             "is_demo": is_demo,
+            "email_status": "pending",
+            "email_sent_at": None,
+            "email_error": None,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat()
         }
@@ -394,7 +414,10 @@ class CandidateService:
                 "expires_at": expires_at.isoformat(),
                 "is_used": False,
                 "status": "Scheduled",
-                "is_demo": is_demo
+                "is_demo": is_demo,
+                "email_status": "pending",
+                "email_sent_at": None,
+                "email_error": None
             }
             invites_col.insert_one(invite_record)
         except Exception as e:
@@ -409,16 +432,71 @@ class CandidateService:
         return {
             "success": True,
             "token": raw_token,
-            "interview_url": f"/interview/{raw_token}",
+            "interview_url": full_interview_url,
+            "relative_url": f"/interview/{raw_token}",
             "expires_at": expires_at.isoformat(),
             "expires_in_hours": expires_in_hours,
             "candidate": clean_candidate
         }
 
+    def update_email_status(
+        self,
+        candidate_identifier: str,
+        status: str,
+        sent_at: Optional[str] = None,
+        error_message: Optional[str] = None
+    ) -> bool:
+        """
+        Update candidate invitation email dispatch status and error telemetry.
+        status: 'pending' | 'sent' | 'failed'
+        """
+        if not candidate_identifier:
+            return False
+
+        now_str = datetime.utcnow().isoformat()
+        update_fields: Dict[str, Any] = {
+            "email_status": status,
+            "updated_at": now_str
+        }
+        if status == "sent":
+            update_fields["email_sent_at"] = sent_at or now_str
+            update_fields["email_error"] = None
+        elif status == "failed":
+            update_fields["email_error"] = error_message or "Email dispatch failed"
+
+        result = self.collection.update_many(
+            {
+                "$or": [
+                    {"id": candidate_identifier},
+                    {"email": candidate_identifier.lower().strip()},
+                    {"interview_id": candidate_identifier}
+                ]
+            },
+            {"$set": update_fields}
+        )
+
+        try:
+            invites_col = get_collection("interview_invites")
+            invites_col.update_many(
+                {
+                    "$or": [
+                        {"candidate_id": candidate_identifier},
+                        {"candidate_email": candidate_identifier.lower().strip()}
+                    ]
+                },
+                {"$set": update_fields}
+            )
+        except Exception:
+            pass
+
+        return result.modified_count > 0
+
     def validate_interview_token(self, raw_token: str) -> Dict[str, Any]:
         """
         Validate single-use interview token:
+        - Rejects legacy/weak tokens (< 32 characters entropy)
         - Computes SHA-256 hash of raw_token
+        - Compares hashes in constant time using hmac.compare_digest
         - Verifies existence, expiration, cancellation, and single-use status
         - Returns read-only candidate data without scores or evaluation
         """
@@ -429,26 +507,24 @@ class CandidateService:
                 "message": "Please open the interview link sent by your recruiter."
             }
 
-        token_hash = hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
+        token_clean = raw_token.strip()
+        # Invalidate/reject weak or legacy tokens (< 32 chars of entropy)
+        if len(token_clean) < 32:
+            return {
+                "valid": False,
+                "reason": "invalid_or_legacy",
+                "message": "This interview link is no longer valid or uses an outdated format. Please request a new invitation from your recruiter."
+            }
 
-        # Find in collection by token_hash (or fallback raw_token for legacy tokens)
-        candidate = self.collection.find_one({
-            "$or": [
-                {"token_hash": token_hash},
-                {"token": raw_token.strip()},
-                {"id": raw_token.strip()}
-            ]
-        })
+        token_hash = hashlib.sha256(token_clean.encode("utf-8")).hexdigest()
+
+        # Find in collection by token_hash
+        candidate = self.collection.find_one({"token_hash": token_hash})
 
         if not candidate:
             try:
                 invites_col = get_collection("interview_invites")
-                inv = invites_col.find_one({
-                    "$or": [
-                        {"token_hash": token_hash},
-                        {"token": raw_token.strip()}
-                    ]
-                })
+                inv = invites_col.find_one({"token_hash": token_hash})
                 if inv:
                     cand_id = inv.get("candidate_id")
                     candidate = self.collection.find_one({"id": cand_id}) if cand_id else inv
@@ -460,6 +536,15 @@ class CandidateService:
                 "valid": False,
                 "reason": "not_found",
                 "message": "Invalid or unrecognized interview link. Please verify your invitation URL."
+            }
+
+        # Constant-time comparison for security
+        stored_hash = candidate.get("token_hash", "")
+        if not hmac.compare_digest(stored_hash, token_hash):
+            return {
+                "valid": False,
+                "reason": "not_found",
+                "message": "Invalid interview token authentication."
             }
 
         # Check status

@@ -402,12 +402,13 @@ export const interviewService = {
    * Send interview invitation email to candidate
    */
   async sendInviteEmail(payload: {
+    candidate_id?: string;
     candidate_email: string;
     candidate_name: string;
     job_title: string;
     interview_url: string;
     expires_at?: string;
-  }): Promise<{ success: boolean; message?: string; error?: string }> {
+  }): Promise<{ success: boolean; status?: string; message?: string; error?: string }> {
     try {
       const userRole = localStorage.getItem("user_role") || "RECRUITER";
       const token = localStorage.getItem("auth_token") || "";
@@ -423,9 +424,27 @@ export const interviewService = {
         credentials: "include",
         body: JSON.stringify(payload),
       });
-      return await response.json();
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        const errDetail = errJson.detail || errJson.error || errJson.message || `Server responded with ${response.status}`;
+        return {
+          success: false,
+          status: "failed",
+          error: typeof errDetail === "string" ? errDetail : JSON.stringify(errDetail),
+        };
+      }
+
+      const data = await response.json();
+      return data;
     } catch (err: unknown) {
-      return { success: false, error: err instanceof Error ? err.message : "Failed to send email" };
+      const rawMsg = err instanceof Error ? err.message : "Failed to send email";
+      const isNetworkErr = rawMsg.includes("Failed to fetch") || rawMsg.includes("NetworkError") || rawMsg.includes("Load failed");
+      return {
+        success: false,
+        status: "failed",
+        error: isNetworkErr ? "Cannot reach the server" : rawMsg,
+      };
     }
   },
 

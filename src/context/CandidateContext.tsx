@@ -41,6 +41,9 @@ export interface CandidateRecord {
   scheduledTime?: string;
   resumeText?: string;
   report?: Record<string, unknown>;
+  email_status?: "pending" | "sent" | "failed";
+  email_sent_at?: string;
+  email_error?: string;
 }
 
 export interface CandidateCounts {
@@ -367,7 +370,10 @@ export const CandidateProvider: React.FC<{ children: ReactNode }> = ({ children 
             resumeText: (c.resume_text || c.resumeText) as string | undefined,
             avatarBg: (c.avatar_bg || c.avatarBg || "bg-[var(--primary-soft)] text-[var(--primary)]") as string,
             initials: (c.initials as string) || (typeof c.name === "string" ? c.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : "CD"),
-            report: c.report as Record<string, unknown> | undefined
+            report: c.report as Record<string, unknown> | undefined,
+            email_status: (c.email_status as "pending" | "sent" | "failed") || "pending",
+            email_sent_at: c.email_sent_at as string | undefined,
+            email_error: c.email_error as string | undefined
           }));
 
           setCandidates(mapped);

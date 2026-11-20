@@ -5,7 +5,7 @@ const rawFastApiUrl =
   import.meta.env.VITE_FASTAPI_BASE_URL || 
   import.meta.env.VITE_API_URL || 
   import.meta.env.VITE_API_BASE_URL || 
-  (import.meta.env.DEV ? 'http://localhost:8001' : window.location.origin);
+  (import.meta.env.DEV ? 'http://localhost:8001' : 'https://ai-interview-agent-n4bf.onrender.com');
 
 // Base URL for FastAPI backend (strips any trailing slash)
 export const FASTAPI_BASE_URL = rawFastApiUrl.replace(/\/+$/, '');
