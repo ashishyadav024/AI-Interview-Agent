@@ -49,7 +49,7 @@ class EmailService:
         interview_id: str,
         auto_start_bot: bool = True,
         auto_join_token: str = None,
-        backend_url: str = "http://localhost:8001"
+        backend_url: str = None
     ) -> Dict[str, Any]:
         """
         Send interview invitation email
@@ -58,10 +58,13 @@ class EmailService:
             Dict with success status (always 200)
             {
                 "success": True/False,
-                "message": "...",
-                "error": "..."  # Only if success = False
+                "email_id": str,
+                "message": str,
+                "status": "sent" / "failed",
+                "preview_url": str (if development mode)
             }
         """
+        backend_url = backend_url or os.getenv("BACKEND_URL", "http://localhost:8001")
         logger.info(f"📧 Preparing interview invitation email for {to_email}")
         
         try:

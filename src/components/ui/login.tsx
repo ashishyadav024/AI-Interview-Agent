@@ -63,8 +63,9 @@ const Login: React.FC = () => {
     setView(newView);
   };
 
-  // Helper to fill seed credentials
+  // Helper to fill seed credentials (only enabled during local development)
   const fillSeedCredentials = (persona: 'recruiter' | 'candidate') => {
+    if (!import.meta.env.DEV) return;
     setError('');
     setSuccess('');
     if (persona === 'recruiter') {
@@ -99,9 +100,10 @@ const Login: React.FC = () => {
     }
   };
 
-  // Sign In Handler (Direct redirect, no intermediate screen)
+  // Sign In Handler with double-submit guard and role validation
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // Prevent double submit
     setError('');
     setSuccess('');
 
@@ -115,9 +117,17 @@ const Login: React.FC = () => {
     try {
       const response = await loginWithServerAuth(email, password);
       if (response.success && response.user) {
-        setSuccess('Authentication successful. Redirecting...');
-        // Immediate redirection based on server-verified role
-        handlePostLoginRedirect(response.user.role);
+        const serverRole = response.user.role.toUpperCase();
+        const tabRole = activePersona === 'recruiter' ? 'RECRUITER' : 'CANDIDATE';
+
+        if (serverRole !== tabRole && !(tabRole === 'RECRUITER' && serverRole === 'ADMIN')) {
+          setSuccess(`Logged in as verified role (${serverRole}). Redirecting to your assigned portal...`);
+        } else {
+          setSuccess('Authentication successful. Redirecting...');
+        }
+
+        // Automatic redirect by real server-verified role
+        handlePostLoginRedirect(serverRole);
       } else {
         setError(response.error || 'Invalid email or password.');
       }
@@ -248,29 +258,31 @@ const Login: React.FC = () => {
                   : 'Sign in to join your AI video interview assessment'}
               </p>
 
-              {/* Seed Demo Quick Fill Alert/Helper */}
-              <div className="mb-4 p-2.5 rounded-xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--text)]">
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-[var(--primary)]" />
-                  <span className="text-[var(--text-muted)]">Quick Demo:</span>
+              {/* Seed Demo Quick Fill Alert/Helper - Only visible in development mode */}
+              {import.meta.env.DEV && (
+                <div className="mb-4 p-2.5 rounded-xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--text)]">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 text-[var(--primary)]" />
+                    <span className="text-[var(--text-muted)]">Quick Demo:</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => fillSeedCredentials('recruiter')}
+                      className="px-2 py-0.5 rounded bg-[var(--surface)] font-semibold text-[var(--primary)] border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition-colors shadow-2xs"
+                    >
+                      Recruiter Seed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fillSeedCredentials('candidate')}
+                      className="px-2 py-0.5 rounded bg-[var(--surface)] font-semibold text-[var(--primary)] border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition-colors shadow-2xs"
+                    >
+                      Candidate Seed
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => fillSeedCredentials('recruiter')}
-                    className="px-2 py-0.5 rounded bg-[var(--surface)] font-semibold text-[var(--primary)] border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition-colors shadow-2xs"
-                  >
-                    Recruiter Seed
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillSeedCredentials('candidate')}
-                    className="px-2 py-0.5 rounded bg-[var(--surface)] font-semibold text-[var(--primary)] border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--primary)] hover:text-white transition-colors shadow-2xs"
-                  >
-                    Candidate Seed
-                  </button>
-                </div>
-              </div>
+              )}
 
               {/* Alert Feedback */}
               {error && (

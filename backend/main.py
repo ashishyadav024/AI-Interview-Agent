@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, Header, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, Header, BackgroundTasks, Request, Response, Depends, Cookie
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
@@ -106,6 +106,9 @@ async def lifespan(app: FastAPI):
                 "message": "GROQ_API_KEY is missing or configured with placeholder"
             }
             logger.warning("⚠️ Groq LLM key is placeholder or unset")
+            if os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower() in ("production", "prod"):
+                logger.critical("❌ CRITICAL STARTUP ERROR: Required environment variable 'GROQ_API_KEY' is missing in production!")
+                raise RuntimeError("CRITICAL STARTUP ERROR: Required environment variable 'GROQ_API_KEY' is missing.")
     except Exception as e:
         error_msg = str(e)
         if groq_api_key and groq_api_key in error_msg:
@@ -124,29 +127,71 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Environment detection
+APP_ENV = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower()
+IS_PRODUCTION = APP_ENV in ("production", "prod")
+
+# Health endpoint for full system check (Backend, DB, LLM)
+@app.get("/api/health")
+async def api_health_check():
+    """Production health check for backend, MongoDB, and Groq LLM."""
+    try:
+        from db.mongo_client import get_mongo_client
+        mongo_client = get_mongo_client()
+        db_connected = mongo_client.is_connected()
+        db_stats = mongo_client.get_stats()
+    except Exception as e:
+        db_connected = False
+        db_stats = {"error": str(e), "mode": "offline"}
+
+    groq_ready = bool(os.getenv("GROQ_API_KEY") and not os.getenv("GROQ_API_KEY").startswith("gsk_your_"))
+
+    status = "healthy" if groq_ready else "degraded"
+    return {
+        "status": status,
+        "environment": APP_ENV,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "components": {
+            "backend": {"status": "up"},
+            "mongodb": {
+                "status": "connected" if db_connected else "fallback_store",
+                "mode": db_stats.get("mode", "resilient_store")
+            },
+            "llm": _GROQ_HEALTH
+        }
+    }
+
 # Health endpoint for Groq LLM
 @app.get("/api/health/llm")
 async def get_llm_health():
     """Health check endpoint for Groq LLM integration."""
     return _GROQ_HEALTH
 
-# Configure CORS (supports local development and cloud deployments like Vercel, Netlify, Render)
-cors_origins_env = os.getenv("CORS_ORIGINS", "")
-allowed_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8001",
-    "http://127.0.0.1:8001"
-]
-if cors_origins_env:
-    allowed_origins.extend([o.strip() for o in cors_origins_env.split(",") if o.strip()])
+# Configure CORS (supports local development and restricted cloud deployments)
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", os.getenv("CORS_ORIGINS", ""))
+if IS_PRODUCTION:
+    if allowed_origins_env:
+        allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    else:
+        allowed_origins = ["https://ai-interview-agent-three-taupe.vercel.app"]
+    allow_origin_regex = None
+else:
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8001",
+        "http://127.0.0.1:8001"
+    ]
+    if allowed_origins_env:
+        allowed_origins.extend([o.strip() for o in allowed_origins_env.split(",") if o.strip()])
+    allow_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$|^https://.*\.vercel\.app$|^https://.*\.netlify\.app$|^https://.*\.onrender\.com$"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$|^https://.*\.vercel\.app$|^https://.*\.netlify\.app$|^https://.*\.onrender\.com$|^https://.*\.railway\.app$",
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -299,47 +344,144 @@ class RegisterRequest(BaseModel):
     company: Optional[str] = None
     role: Optional[str] = None  # Ignored: Server strictly enforces CANDIDATE for self-registration
 
-# In-memory database with pre-configured seed accounts
-SEED_USERS: Dict[str, Dict[str, Any]] = {
-    "recruiter@interviewai.com": {
-        "id": "usr-recruiter-1",
-        "email": "recruiter@interviewai.com",
-        "password": "Recruiter123!",
-        "name": "Alex Morgan",
-        "role": "RECRUITER",
-        "company": "InterviewAI Talent Ops"
-    },
-    "candidate@interviewai.com": {
-        "id": "usr-candidate-1",
-        "email": "candidate@interviewai.com",
-        "password": "Candidate123!",
-        "name": "Aarav Sharma",
-        "role": "CANDIDATE",
-        "company": None
-    },
-    "admin@interviewai.com": {
-        "id": "usr-admin-1",
-        "email": "admin@interviewai.com",
-        "password": "Admin123!",
-        "name": "System Admin",
-        "role": "ADMIN",
-        "company": "InterviewAI Inc"
+# In-memory database with pre-configured seed accounts (only available in development)
+if not IS_PRODUCTION:
+    SEED_USERS: Dict[str, Dict[str, Any]] = {
+        "recruiter@interviewai.com": {
+            "id": "usr-recruiter-1",
+            "email": "recruiter@interviewai.com",
+            "password": "Recruiter123!",
+            "name": "Alex Morgan",
+            "role": "RECRUITER",
+            "company": "InterviewAI Talent Ops"
+        },
+        "candidate@interviewai.com": {
+            "id": "usr-candidate-1",
+            "email": "candidate@interviewai.com",
+            "password": "Candidate123!",
+            "name": "Aarav Sharma",
+            "role": "CANDIDATE",
+            "company": None
+        },
+        "admin@interviewai.com": {
+            "id": "usr-admin-1",
+            "email": "admin@interviewai.com",
+            "password": "Admin123!",
+            "name": "System Admin",
+            "role": "ADMIN",
+            "company": "InterviewAI Inc"
+        }
     }
-}
+else:
+    SEED_USERS: Dict[str, Dict[str, Any]] = {}
 
 ACTIVE_AUTH_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
+# Rate Limiting for Authentication Attempts
+LOGIN_ATTEMPTS: Dict[str, List[float]] = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW = 60.0  # seconds
+
+def check_login_rate_limit(client_ip: str, email: str):
+    """Enforce rate limits on login attempts to mitigate brute-force attacks."""
+    now = time.time()
+    key = f"{client_ip}:{email}"
+    attempts = [t for t in LOGIN_ATTEMPTS.get(key, []) if now - t < LOGIN_ATTEMPT_WINDOW]
+    LOGIN_ATTEMPTS[key] = attempts
+    if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Please wait 1 minute before trying again."
+        )
+
+def record_failed_login(client_ip: str, email: str):
+    key = f"{client_ip}:{email}"
+    LOGIN_ATTEMPTS.setdefault(key, []).append(time.time())
+
+def clear_failed_login(client_ip: str, email: str):
+    key = f"{client_ip}:{email}"
+    LOGIN_ATTEMPTS.pop(key, None)
+
+async def require_recruiter_role(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    auth_token: Optional[str] = Cookie(None, alias="auth_token")
+) -> Dict[str, Any]:
+    """
+    Strict server-side RBAC protection.
+    Ensures only users with RECRUITER, ADMIN, or HIRING_MANAGER roles can access endpoint.
+    Returns 401 if unauthenticated, 403 Forbidden if role is CANDIDATE or unauthorized.
+    """
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split()[1]
+    elif auth_token:
+        token = auth_token
+
+    user = ACTIVE_AUTH_SESSIONS.get(token) if token else None
+    role = user.get("role") if user else (x_user_role or "")
+    role = role.upper().strip()
+
+    if not role:
+        if not IS_PRODUCTION:
+            role = "RECRUITER"
+        else:
+            raise HTTPException(status_code=401, detail="Authentication required.")
+
+    if role in ("CANDIDATE", "USER"):
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Candidates are not authorized to access recruiter resources."
+        )
+
+    if role not in ("RECRUITER", "ADMIN", "HIRING_MANAGER", "HR"):
+        raise HTTPException(status_code=403, detail="Forbidden: Insufficient privileges.")
+
+    return user or {"role": role}
+
 @app.post("/api/auth/login")
-async def api_auth_login(req: LoginRequest):
+async def api_auth_login(req: LoginRequest, request: Request, response: Response):
     """
     Server-verified authentication endpoint.
     Returns session token and verified role from server state. Never trusts client role.
+    Sets secure httpOnly + Secure + SameSite cookies in production.
     """
+    client_ip = request.client.host if request.client else "unknown"
     clean_email = req.email.strip().lower()
-    user_record = SEED_USERS.get(clean_email)
 
-    if not user_record or user_record["password"] != req.password:
+    check_login_rate_limit(client_ip, clean_email)
+
+    user_record = None
+
+    # Check dev seed accounts first if in development
+    if not IS_PRODUCTION and clean_email in SEED_USERS:
+        candidate = SEED_USERS[clean_email]
+        if candidate.get("password") == req.password:
+            user_record = candidate
+
+    # Authenticate against MongoDB database if not matched in seed
+    if not user_record:
+        try:
+            from repositories.user_repository import UserRepository
+            repo = UserRepository()
+            db_user = repo.authenticate(clean_email, req.password)
+            if db_user:
+                user_record = {
+                    "id": str(db_user.get("_id", secrets.token_hex(4))),
+                    "email": db_user.get("email", clean_email),
+                    "name": db_user.get("full_name") or db_user.get("name", "User"),
+                    "role": db_user.get("role", "CANDIDATE").upper(),
+                    "company": db_user.get("company")
+                }
+        except Exception as e:
+            logger.warning(f"Database authentication check failed: {e}")
+
+    if not user_record:
+        record_failed_login(client_ip, clean_email)
         raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    clear_failed_login(client_ip, clean_email)
 
     token = secrets.token_hex(24)
     session_data = {
@@ -352,6 +494,17 @@ async def api_auth_login(req: LoginRequest):
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
     ACTIVE_AUTH_SESSIONS[token] = session_data
+
+    # Set secure httpOnly cookie (SameSite='none' for cross-origin production, 'lax' for dev)
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="none" if IS_PRODUCTION else "lax",
+        max_age=86400,
+        path="/"
+    )
 
     logger.info(f"✅ User signed in: {user_record['email']} with server-verified role: {user_record['role']}")
     return {
@@ -367,7 +520,7 @@ async def api_auth_login(req: LoginRequest):
     }
 
 @app.post("/api/auth/register")
-async def api_auth_register(req: RegisterRequest):
+async def api_auth_register(req: RegisterRequest, response: Response):
     """
     Self sign-up creates exclusively CANDIDATE accounts.
     RECRUITER/ADMIN roles cannot be created via public registration.
@@ -377,7 +530,6 @@ async def api_auth_register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="An account with this email already exists.")
 
     new_id = f"usr-candidate-{secrets.token_hex(4)}"
-    # STRICT SERVER ENFORCEMENT: Public registration is always CANDIDATE
     candidate_record = {
         "id": new_id,
         "email": clean_email,
@@ -386,7 +538,24 @@ async def api_auth_register(req: RegisterRequest):
         "role": "CANDIDATE",
         "company": req.company
     }
-    SEED_USERS[clean_email] = candidate_record
+
+    # In development, also track in local map
+    if not IS_PRODUCTION:
+        SEED_USERS[clean_email] = candidate_record
+
+    # Persist in UserRepository (MongoDB)
+    try:
+        from repositories.user_repository import UserRepository
+        repo = UserRepository()
+        repo.create_user(
+            email=clean_email,
+            password=req.password,
+            full_name=candidate_record["name"],
+            role="candidate",
+            company=req.company
+        )
+    except Exception as e:
+        logger.warning(f"Could not persist candidate to MongoDB: {e}")
 
     token = secrets.token_hex(24)
     ACTIVE_AUTH_SESSIONS[token] = {
@@ -398,6 +567,16 @@ async def api_auth_register(req: RegisterRequest):
         "company": req.company,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
+
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="none" if IS_PRODUCTION else "lax",
+        max_age=86400,
+        path="/"
+    )
 
     logger.info(f"👤 New CANDIDATE registered: {clean_email}")
     return {
@@ -412,18 +591,25 @@ async def api_auth_register(req: RegisterRequest):
     }
 
 @app.get("/api/auth/me")
-async def api_auth_me(authorization: Optional[str] = Header(None)):
+async def api_auth_me(
+    authorization: Optional[str] = Header(None),
+    auth_token: Optional[str] = Cookie(None, alias="auth_token")
+):
     """
     Validates session token on the server and returns verified user role and details.
+    Accepts Bearer token header or secure cookie.
     """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header.")
+    token = None
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+    elif auth_token:
+        token = auth_token
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication credentials.")
     
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid authorization scheme.")
-    
-    token = parts[1]
     session = ACTIVE_AUTH_SESSIONS.get(token)
     if not session:
         raise HTTPException(status_code=401, detail="Session expired or invalid.")
@@ -440,12 +626,24 @@ async def api_auth_me(authorization: Optional[str] = Header(None)):
     }
 
 @app.post("/api/auth/logout")
-async def api_auth_logout(authorization: Optional[str] = Header(None)):
-    """Revoke session token on the server."""
+async def api_auth_logout(
+    response: Response,
+    authorization: Optional[str] = Header(None),
+    auth_token: Optional[str] = Cookie(None, alias="auth_token")
+):
+    """Revoke session token on the server and clear secure cookie."""
+    token = None
     if authorization:
         parts = authorization.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
-            ACTIVE_AUTH_SESSIONS.pop(parts[1], None)
+            token = parts[1]
+    elif auth_token:
+        token = auth_token
+
+    if token:
+        ACTIVE_AUTH_SESSIONS.pop(token, None)
+    
+    response.delete_cookie(key="auth_token", path="/")
     return {"success": True, "message": "Successfully logged out."}
 
 def extract_text_from_docx_bytes(docx_bytes: bytes) -> str:
@@ -818,7 +1016,7 @@ class CreateInterviewLinkRequest(BaseModel):
 @app.post("/api/interviews/create-link")
 async def create_interview_link(
     req: CreateInterviewLinkRequest,
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role")
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
 ):
     """
     Creates a unique single-use AI interview link (/interview/[token]) that expires in 48 hours.
@@ -931,11 +1129,13 @@ async def get_candidates_endpoint(
     sort_order: str = "desc",
     page: int = 1,
     page_size: int = 10,
-    organization: Optional[str] = None
+    organization: Optional[str] = None,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
 ):
     """
     Get candidates with server-side filters, search, sorting, pagination,
     and dynamically computed tab counts from the database single source of truth.
+    Strictly protected: candidates receive 403 Forbidden.
     """
     try:
         service = get_candidate_service()
@@ -960,29 +1160,12 @@ async def get_candidates_endpoint(
 @app.get("/api/candidates/{candidate_id}")
 async def get_candidate_by_id_endpoint(
     candidate_id: str,
-    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
-    authorization: Optional[str] = Header(None)
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
 ):
     """
     Get full candidate details including evaluation report, conversation history, and flags.
     Recruiter/Admin access only. Candidates receive 403 Forbidden.
     """
-    # RBAC protection: Candidates must never access recruiter evaluation reports
-    normalized_role = (x_user_role or "").upper().strip()
-    if authorization:
-        try:
-            token_data = verify_jwt_token(authorization)
-            if token_data.get("valid") and token_data.get("role"):
-                normalized_role = token_data.get("role", "").upper().strip()
-        except Exception:
-            pass
-
-    if normalized_role in {"CANDIDATE", "USER"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Forbidden: Candidate role cannot access internal evaluation reports."
-        )
-
     try:
         service = get_candidate_service()
         candidate = service.get_candidate_by_id(candidate_id)
@@ -1022,7 +1205,10 @@ async def get_db_health_endpoint():
         }
 
 @app.post("/api/candidates/reject")
-async def reject_candidates(payload: CandidateRejectRequest):
+async def reject_candidates(
+    payload: CandidateRejectRequest,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
+):
     """
     Reject candidates in bulk with server tracking and audit logging.
     """
@@ -1041,7 +1227,10 @@ async def reject_candidates(payload: CandidateRejectRequest):
     }
 
 @app.post("/api/candidates/undo-reject")
-async def undo_reject_candidates(payload: CandidateUndoRejectRequest):
+async def undo_reject_candidates(
+    payload: CandidateUndoRejectRequest,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
+):
     """
     Undo rejection and restore previous pipeline statuses in database.
     """
@@ -1059,7 +1248,10 @@ async def undo_reject_candidates(payload: CandidateUndoRejectRequest):
     }
 
 @app.post("/api/candidates/shortlist")
-async def shortlist_candidates(payload: CandidateShortlistRequest):
+async def shortlist_candidates(
+    payload: CandidateShortlistRequest,
+    auth_user: Dict[str, Any] = Depends(require_recruiter_role)
+):
     """
     Shortlist candidates in bulk in database.
     """

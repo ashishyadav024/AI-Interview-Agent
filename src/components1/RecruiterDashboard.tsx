@@ -14,6 +14,7 @@ import { toast } from "@/components/ui/use-toast";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Sidebar } from "./Sidebar";
+import { FASTAPI_BASE_URL, API_BASE_URL } from "@/config/api";
 import {
   useCandidates,
   CandidateRecord,
@@ -1190,11 +1191,11 @@ const RecruiterDashboard: React.FC = () => {
         formData.append("resume_files", item.file);
       });
 
-      // Try FastAPI port 8001 first, fallback to port 5000
+      // Try FastAPI primary service first, fallback to auxiliary service
       let res: Response | null = null;
       let lastNetworkError = "";
       try {
-        res = await fetch("http://localhost:8001/api/analyze", {
+        res = await fetch(`${FASTAPI_BASE_URL}/api/analyze`, {
           method: "POST",
           headers: {
             "X-User-Role": currentUserRole
@@ -1202,13 +1203,13 @@ const RecruiterDashboard: React.FC = () => {
           body: formData
         });
       } catch (err1) {
-        lastNetworkError = err1 instanceof Error ? err1.message : "Network error on port 8001";
+        lastNetworkError = err1 instanceof Error ? err1.message : "Network error on primary API";
         res = null;
       }
 
       if (!res || !res.ok) {
         try {
-          res = await fetch("http://localhost:5000/api/analyze", {
+          res = await fetch(`${API_BASE_URL}/api/analyze`, {
             method: "POST",
             headers: {
               "X-User-Role": currentUserRole
@@ -1216,7 +1217,7 @@ const RecruiterDashboard: React.FC = () => {
             body: formData
           });
         } catch (err2) {
-          const err2Msg = err2 instanceof Error ? err2.message : "Network error on port 5000";
+          const err2Msg = err2 instanceof Error ? err2.message : "Network error on auxiliary API";
           if (!res) {
             throw new Error(`Failed to reach resume analysis service: ${lastNetworkError || err2Msg}`);
           }
@@ -1340,7 +1341,7 @@ const RecruiterDashboard: React.FC = () => {
       let expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
       try {
-        const resp = await fetch("http://localhost:8001/api/interviews/create-link", {
+        const resp = await fetch(`${FASTAPI_BASE_URL}/api/interviews/create-link`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { API_BASE_URL } from "@/config/api";
 
 interface CareerPathProps {
   resumeFile: File | null;
@@ -24,7 +25,7 @@ const CareerPath: React.FC<CareerPathProps> = ({ resumeFile, resumeText, analysi
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/analyze-career-path', {
+      const response = await fetch(`${API_BASE_URL}/api/analyze-career-path`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

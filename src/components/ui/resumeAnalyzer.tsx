@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useNavigate, Link } from 'react-router-dom';
 import Spinner from "@/components/ui/spinner";
+import { FASTAPI_BASE_URL, API_BASE_URL } from '@/config/api';
 
 interface ResumeResult {
   names: string[];
@@ -34,7 +35,7 @@ interface EmailResult {
   message: string;
 }
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const LOCAL_API_BASE_URL = `${API_BASE_URL}/api`;
 
 const PREDEFINED_MESSAGES = {
   accept: `Dear Candidate,
@@ -204,7 +205,7 @@ const ResumeAnalyzer: React.FC = () => {
         threshold
       });
 
-      const response = await fetch('http://localhost:5000/api/analyze', {
+      const response = await fetch(`${FASTAPI_BASE_URL}/api/analyze`, {
         method: 'POST',
         body: formData,
       });

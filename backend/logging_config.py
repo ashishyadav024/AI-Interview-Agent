@@ -19,6 +19,27 @@ MEETING_BOT_LOG_FILE = os.path.join(LOGS_DIR, f'meeting_bot_{datetime.now().strf
 INTERVIEW_LOG_FILE = os.path.join(LOGS_DIR, f'interview_{datetime.now().strftime("%Y%m%d")}.log')
 ERROR_LOG_FILE = os.path.join(LOGS_DIR, f'errors_{datetime.now().strftime("%Y%m%d")}.log')
 
+import re
+
+class SensitiveDataFilter(logging.Filter):
+    """
+    Sanitizes log messages to ensure passwords, tokens, API keys,
+    and secret authorization headers are never written to logs or stdout.
+    """
+    SENSITIVE_PATTERNS = [
+        (re.compile(r'(["\']?(?:password|pwd|secret)["\']?\s*[:=]\s*["\']?)([^"\'\s,;]+)(["\']?)', re.IGNORECASE), r'\1[REDACTED]\3'),
+        (re.compile(r'(["\']?(?:token|access_token|auth_token)["\']?\s*[:=]\s*["\']?)([^"\'\s,;]+)(["\']?)', re.IGNORECASE), r'\1[REDACTED]\3'),
+        (re.compile(r'(["\']?(?:api_key|apikey|groq_api_key)["\']?\s*[:=]\s*["\']?)([^"\'\s,;]+)(["\']?)', re.IGNORECASE), r'\1[REDACTED]\3'),
+        (re.compile(r'(Bearer\s+)([A-Za-z0-9_\-\.]+)', re.IGNORECASE), r'\1[REDACTED]'),
+        (re.compile(r'(gsk_[A-Za-z0-9]{15,})', re.IGNORECASE), r'[REDACTED_KEY]'),
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            for pattern, repl in self.SENSITIVE_PATTERNS:
+                record.msg = pattern.sub(repl, record.msg)
+        return True
+
 
 def setup_logging(log_level=logging.INFO):
     """
@@ -29,6 +50,7 @@ def setup_logging(log_level=logging.INFO):
     - Main log file (DEBUG+)
     - Error log file (ERROR+)
     - Module-specific log files
+    - Sensitive data masking filter
     """
     
     # Root logger configuration
@@ -37,6 +59,10 @@ def setup_logging(log_level=logging.INFO):
     
     # Clear existing handlers
     root_logger.handlers.clear()
+
+    # Redaction filter for secrets & passwords
+    redactor = SensitiveDataFilter()
+    root_logger.addFilter(redactor)
     
     # ==================== Console Handler ====================
     console_handler = logging.StreamHandler(sys.stdout)

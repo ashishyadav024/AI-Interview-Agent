@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { API_BASE_URL } from "@/config/api";
 
 interface JobPredictionProps {
   resumeFile: File | null;
@@ -24,7 +25,7 @@ const JobPrediction: React.FC<JobPredictionProps> = ({ resumeFile, resumeText, a
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/predict-job', {
+      const response = await fetch(`${API_BASE_URL}/api/predict-job`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

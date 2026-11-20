@@ -5,8 +5,9 @@
  * and session validation for InterviewAI.
  */
 
-const API_BASE_URL = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL || 'http://localhost:8001';
-const API_URL = `${API_BASE_URL}/api/auth`;
+import { FASTAPI_BASE_URL } from '../config/api';
+
+const API_URL = `${FASTAPI_BASE_URL}/api/auth`;
 
 export type UserRoleType = 'RECRUITER' | 'CANDIDATE' | 'ADMIN' | 'HIRING_MANAGER';
 
@@ -28,23 +29,39 @@ export interface AuthResponse {
 
 /**
  * Server-verified login
- * Authenticates against backend/main.py seed accounts or DB.
+ * Authenticates against backend/main.py.
  * Stores verified role and session token in localStorage.
+ * Includes a 10-second timeout with AbortController and credentials for httpOnly cookies.
  */
 export const loginWithServerAuth = async (
   email: string,
   password: string
 ): Promise<AuthResponse> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
   try {
     const response = await fetch(`${API_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      credentials: 'include',
+      body: JSON.stringify({ email, password }),
+      signal: controller.signal
     });
 
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      throw new Error(data.detail || data.error || 'Invalid credentials.');
+    clearTimeout(timeoutId);
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !data?.success) {
+      if (response.status === 401) {
+        throw new Error(data?.detail || data?.error || 'Invalid email or password.');
+      } else if (response.status === 429) {
+        throw new Error(data?.detail || 'Too many login attempts. Please wait 1 minute before trying again.');
+      } else if (response.status >= 500) {
+        throw new Error('Server error, please try again.');
+      }
+      throw new Error(data?.detail || data?.error || 'Login failed. Please check your credentials.');
     }
 
     // Persist verified session
@@ -57,44 +74,44 @@ export const loginWithServerAuth = async (
 
     return data;
   } catch (error: unknown) {
-    // If backend port 8001 is unreachable during offline/sandbox dev, provide seamless fallback
-    const cleanEmail = email.trim().toLowerCase();
-    if (cleanEmail === 'recruiter@interviewai.com' && password === 'Recruiter123!') {
-      const mockRecruiter: AuthUser = {
-        id: 'usr-recruiter-1',
-        email: cleanEmail,
-        name: 'Alex Morgan',
-        role: 'RECRUITER',
-        company: 'InterviewAI Talent Ops'
-      };
-      localStorage.setItem('user_role', 'RECRUITER');
-      localStorage.setItem('auth_user', JSON.stringify(mockRecruiter));
-      localStorage.setItem('user_authenticated', 'true');
-      return { success: true, user: mockRecruiter, token: 'mock-recruiter-token' };
-    } else if (cleanEmail === 'candidate@interviewai.com' && password === 'Candidate123!') {
-      const mockCandidate: AuthUser = {
-        id: 'usr-candidate-1',
-        email: cleanEmail,
-        name: 'Aarav Sharma',
-        role: 'CANDIDATE',
-        company: null
-      };
-      localStorage.setItem('user_role', 'CANDIDATE');
-      localStorage.setItem('auth_user', JSON.stringify(mockCandidate));
-      localStorage.setItem('user_authenticated', 'true');
-      return { success: true, user: mockCandidate, token: 'mock-candidate-token' };
-    } else if (cleanEmail === 'admin@interviewai.com' && password === 'Admin123!') {
-      const mockAdmin: AuthUser = {
-        id: 'usr-admin-1',
-        email: cleanEmail,
-        name: 'System Admin',
-        role: 'ADMIN',
-        company: 'InterviewAI Inc'
-      };
-      localStorage.setItem('user_role', 'ADMIN');
-      localStorage.setItem('auth_user', JSON.stringify(mockAdmin));
-      localStorage.setItem('user_authenticated', 'true');
-      return { success: true, user: mockAdmin, token: 'mock-admin-token' };
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Cannot reach the server (request timed out). Please check your connection.');
+    }
+
+    // If in development mode and backend is offline, provide local dev fallback
+    if (import.meta.env.DEV) {
+      const cleanEmail = email.trim().toLowerCase();
+      if (cleanEmail === 'recruiter@interviewai.com' && password === 'Recruiter123!') {
+        const mockRecruiter: AuthUser = {
+          id: 'usr-recruiter-1',
+          email: cleanEmail,
+          name: 'Alex Morgan',
+          role: 'RECRUITER',
+          company: 'InterviewAI Talent Ops'
+        };
+        localStorage.setItem('user_role', 'RECRUITER');
+        localStorage.setItem('auth_user', JSON.stringify(mockRecruiter));
+        localStorage.setItem('user_authenticated', 'true');
+        return { success: true, user: mockRecruiter, token: 'mock-recruiter-token' };
+      } else if (cleanEmail === 'candidate@interviewai.com' && password === 'Candidate123!') {
+        const mockCandidate: AuthUser = {
+          id: 'usr-candidate-1',
+          email: cleanEmail,
+          name: 'Aarav Sharma',
+          role: 'CANDIDATE',
+          company: null
+        };
+        localStorage.setItem('user_role', 'CANDIDATE');
+        localStorage.setItem('auth_user', JSON.stringify(mockCandidate));
+        localStorage.setItem('user_authenticated', 'true');
+        return { success: true, user: mockCandidate, token: 'mock-candidate-token' };
+      }
+    }
+
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Cannot reach the server. Please verify backend service status.');
     }
 
     throw error;
@@ -111,31 +128,46 @@ export const registerCandidateUser = async (
   fullName: string,
   company?: string
 ): Promise<AuthResponse> => {
-  const response = await fetch(`${API_URL}/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email,
-      password,
-      full_name: fullName,
-      company,
-      role: 'CANDIDATE' // Server will strictly enforce CANDIDATE
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  const data = await response.json();
-  if (!response.ok || !data.success) {
-    throw new Error(data.detail || data.error || 'Registration failed.');
+  try {
+    const response = await fetch(`${API_URL}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        email,
+        password,
+        full_name: fullName,
+        company,
+        role: 'CANDIDATE' // Server strictly enforces CANDIDATE
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.detail || data?.error || 'Registration failed.');
+    }
+
+    if (data.token) localStorage.setItem('auth_token', data.token);
+    if (data.user) {
+      localStorage.setItem('user_role', data.user.role);
+      localStorage.setItem('auth_user', JSON.stringify(data.user));
+    }
+    localStorage.setItem('user_authenticated', 'true');
+
+    return data;
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Registration timed out. Cannot reach the server.');
+    }
+    throw err;
   }
-
-  if (data.token) localStorage.setItem('auth_token', data.token);
-  if (data.user) {
-    localStorage.setItem('user_role', data.user.role);
-    localStorage.setItem('auth_user', JSON.stringify(data.user));
-  }
-  localStorage.setItem('user_authenticated', 'true');
-
-  return data;
 };
 
 /**
@@ -162,7 +194,8 @@ export const verifyServerSession = async (): Promise<AuthUser | null> => {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
-      }
+      },
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -199,17 +232,21 @@ export const verifyServerSession = async (): Promise<AuthUser | null> => {
 /**
  * Clear session and sign out
  */
-export const logoutUserSession = async () => {
+export const logoutUser = async (): Promise<void> => {
   const token = localStorage.getItem('auth_token');
   try {
     if (token) {
       await fetch(`${API_URL}/logout`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        credentials: 'include'
       });
     }
   } catch {
-    // Ignore network failure on logout
+    // Graceful offline cleanup
   } finally {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_role');
@@ -218,16 +255,15 @@ export const logoutUserSession = async () => {
   }
 };
 
-// Legacy compatibility exports
-export const loginUser = async (firebaseUid: string, email: string) => {
-  return loginWithServerAuth(email, 'Recruiter123!');
+// Aliases and compatibility exports
+export const logoutUserSession = logoutUser;
+export const loginUser = async (email: string, password?: string) => {
+  return loginWithServerAuth(email, password || '');
 };
 export const registerUser = async (
-  firebaseUid: string,
   email: string,
   fullName: string,
-  role: 'hr' | 'employee',
-  company: string | null = null
+  company?: string | null
 ) => {
-  return registerCandidateUser(email, 'Candidate123!', fullName, company || undefined);
+  return registerCandidateUser(email, '', fullName, company || undefined);
 };

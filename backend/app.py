@@ -90,16 +90,34 @@ from api.auth_routes import auth_bp
 load_dotenv()
 
 app = Flask(__name__)
+
+# Environment and origins configuration
+IS_PROD = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower() in ("production", "prod")
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", os.getenv("CORS_ORIGINS", ""))
+if IS_PROD:
+    flask_allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()] or ["https://ai-interview-agent-three-taupe.vercel.app"]
+else:
+    flask_allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8001"
+    ]
+    if allowed_origins_env:
+        flask_allowed_origins.extend([o.strip() for o in allowed_origins_env.split(",") if o.strip()])
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": "*",
+        "origins": flask_allowed_origins,
         "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
-        "allow_headers": ["Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin", "X-User-Role", "*"],
+        "allow_headers": ["Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin", "X-User-Role"],
         "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
         "max_age": 3600
     }
 })
-app.secret_key = "7743cafca8fe3397f2ae774d70e436c2"
+app.secret_key = os.getenv("SECRET_KEY", os.getenv("SESSION_SECRET", "7743cafca8fe3397f2ae774d70e436c2"))
 
 # Register blueprints
 app.register_blueprint(auth_bp)

@@ -28,6 +28,7 @@ import {
   TrendingUp
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FASTAPI_BASE_URL } from "@/config/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -207,7 +208,7 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
     }
 
     if (urlRoomid.startsWith("iv_")) {
-      fetch(`http://localhost:8001/api/interviews/verify-link/${urlRoomid}`)
+      fetch(`${FASTAPI_BASE_URL}/api/interviews/verify-link/${urlRoomid}`)
         .then(res => res.json())
         .then(data => {
           if (data.expired) {
@@ -646,7 +647,7 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
           if (!isCandidate && interviewId) {
             const fetchFinalReport = async (attempts = 5) => {
               try {
-                const res = await fetch(`http://localhost:8001/api/candidates/${interviewId}`, {
+                const res = await fetch(`${FASTAPI_BASE_URL}/api/candidates/${interviewId}`, {
                   headers: { "X-User-Role": "RECRUITER" }
                 });
                 if (res.ok) {
