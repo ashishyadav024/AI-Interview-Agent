@@ -142,6 +142,15 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
   const [consentChecked, setConsentChecked] = useState(false);
   const [cameraChecked, setCameraChecked] = useState(false);
   const [micChecked, setMicChecked] = useState(false);
+  const [inputToken, setInputToken] = useState("");
+
+  const handleJoinFromInput = () => {
+    if (!inputToken.trim()) return;
+    const raw = inputToken.trim();
+    const tokenMatch = raw.match(/\/interview\/([^\/\?#]+)/);
+    const token = tokenMatch ? tokenMatch[1] : raw;
+    navigate(`/interview/${encodeURIComponent(token)}`);
+  };
 
   // Auto-fill candidate info if logged in as Candidate and not set
   useEffect(() => {
@@ -836,25 +845,105 @@ const VideoInterview: React.FC<VideoInterviewProps> = () => {
     setError(null);
   };
 
-  // Requirement 5: Plain /interview with no token must not start anything.
+  // Plain /interview with no token: Show link input, active scheduled invites, and instant practice demo option
   if (!urlRoomid) {
+    const storedInvites = (() => {
+      try {
+        const raw = localStorage.getItem("ai_interview_invitations");
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Object.values(parsed) as Array<{
+          token: string;
+          candidate_name?: string;
+          candidate_email?: string;
+          job_role?: string;
+          expires_at_timestamp?: number;
+          is_used?: boolean;
+        }>;
+      } catch {
+        return [];
+      }
+    })();
+
+    const activeInvite = storedInvites.find(
+      (inv) => (!inv.expires_at_timestamp || inv.expires_at_timestamp > Date.now()) && !inv.is_used
+    );
+
     return (
-      <InterviewLayout isDemo={false} maxWidthClass="max-w-md">
-        <div className="flex-1 flex flex-col items-center justify-center w-full py-16">
-          <Card className="w-full shadow-lg border-slate-200 bg-white text-center p-8 space-y-5 rounded-2xl">
-            <div className="mx-auto w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center border border-amber-200 text-amber-600 shadow-xs">
-              <AlertCircle className="w-8 h-8" />
+      <InterviewLayout isDemo={false} maxWidthClass="max-w-lg">
+        <div className="flex-1 flex flex-col items-center justify-center w-full py-12">
+          <Card className="w-full shadow-xl border-slate-200 bg-white text-center p-6 sm:p-8 space-y-6 rounded-2xl">
+            <div className="mx-auto w-16 h-16 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-md text-white">
+              <Bot className="w-8 h-8" />
             </div>
-            <div className="space-y-2">
+
+            <div className="space-y-1.5">
               <h1 className="text-xl font-bold text-slate-900">
-                Interview Link Required
+                AI Technical Interview Portal
               </h1>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Please open the interview link sent by your recruiter to access your scheduled interview. Direct access without an active assessment invitation is not permitted.
+              <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
+                Ready to begin your assessment? Join with your recruiter invitation link or start an interactive practice interview.
               </p>
             </div>
-            <div className="pt-2">
-              <Button onClick={() => navigate("/")} className="w-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white text-xs">
+
+            {/* Found Scheduled Invite Banner */}
+            {activeInvite && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Scheduled Assessment Ready</span>
+                  <span className="text-xs font-bold text-slate-900">{activeInvite.job_role || "Technical Assessment"}</span>
+                  <span className="text-[11px] text-slate-600">Candidate: {activeInvite.candidate_name || "You"}</span>
+                </div>
+                <Button
+                  onClick={() => navigate(`/interview/${activeInvite.token}`)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-4 rounded-lg shadow-xs"
+                >
+                  Join My Interview →
+                </Button>
+              </div>
+            )}
+
+            {/* Token / URL Input Box */}
+            <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 text-left">
+              <label className="text-xs font-semibold text-slate-700 block">
+                Have an invitation link or token?
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="Paste URL or invitation code..."
+                  value={inputToken}
+                  onChange={(e) => setInputToken(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleJoinFromInput()}
+                  className="text-xs h-9 bg-white"
+                />
+                <Button
+                  type="button"
+                  onClick={handleJoinFromInput}
+                  disabled={!inputToken.trim()}
+                  className="bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white text-xs h-9 shrink-0 px-4 disabled:opacity-50"
+                >
+                  Enter
+                </Button>
+              </div>
+            </div>
+
+            {/* Direct Start Action */}
+            <div className="space-y-2.5 pt-1">
+              <Button
+                onClick={() => navigate("/interview/demo-sandbox", { state: { isDemo: true } })}
+                className="w-full h-10 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Start Practice Interview (Demo)</span>
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => navigate("/")}
+                className="w-full text-xs text-slate-500 hover:text-slate-700 border-slate-200 h-9"
+              >
                 Return to Home
               </Button>
             </div>
