@@ -63,20 +63,29 @@ const Login: React.FC = () => {
     setView(newView);
   };
 
-  // Helper to fill seed credentials (only enabled during local development)
-  const fillSeedCredentials = (persona: 'recruiter' | 'candidate') => {
-    if (!import.meta.env.DEV) return;
+  // Handle persona tab switching (works in both development and production)
+  const handlePersonaChange = (persona: 'recruiter' | 'candidate') => {
+    setActivePersona(persona);
     setError('');
     setSuccess('');
-    if (persona === 'recruiter') {
-      setActivePersona('recruiter');
-      setEmail('recruiter@interviewai.com');
-      setPassword('Recruiter123!');
+    if (import.meta.env.DEV) {
+      if (persona === 'recruiter') {
+        setEmail('recruiter@interviewai.com');
+        setPassword('Recruiter123!');
+      } else {
+        setEmail('candidate@interviewai.com');
+        setPassword('Candidate123!');
+      }
     } else {
-      setActivePersona('candidate');
-      setEmail('candidate@interviewai.com');
-      setPassword('Candidate123!');
+      // In production, clear inputs when switching tabs for clean user experience
+      setEmail('');
+      setPassword('');
     }
+  };
+
+  // Helper to fill seed credentials (only enabled during local development)
+  const fillSeedCredentials = (persona: 'recruiter' | 'candidate') => {
+    handlePersonaChange(persona);
   };
 
   // Post-login automatic redirection based on server-verified role
@@ -120,8 +129,10 @@ const Login: React.FC = () => {
         const serverRole = response.user.role.toUpperCase();
         const tabRole = activePersona === 'recruiter' ? 'RECRUITER' : 'CANDIDATE';
 
-        if (serverRole !== tabRole && !(tabRole === 'RECRUITER' && serverRole === 'ADMIN')) {
-          setSuccess(`Logged in as verified role (${serverRole}). Redirecting to your assigned portal...`);
+        if (tabRole === 'CANDIDATE' && (serverRole === 'RECRUITER' || serverRole === 'ADMIN')) {
+          setSuccess('This account is a recruiter account. Redirecting to Recruiter Dashboard...');
+        } else if (tabRole === 'RECRUITER' && serverRole === 'CANDIDATE') {
+          setSuccess('This account is a candidate account. Redirecting to your Interview Assessment...');
         } else {
           setSuccess('Authentication successful. Redirecting...');
         }
@@ -224,7 +235,7 @@ const Login: React.FC = () => {
               <div className="flex items-center p-1 bg-[var(--surface-alt)] rounded-xl mb-6">
                 <button
                   type="button"
-                  onClick={() => fillSeedCredentials('recruiter')}
+                  onClick={() => handlePersonaChange('recruiter')}
                   className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                     activePersona === 'recruiter'
                       ? 'bg-[var(--surface)] text-[var(--primary)] shadow-soft-sm'
@@ -236,7 +247,7 @@ const Login: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => fillSeedCredentials('candidate')}
+                  onClick={() => handlePersonaChange('candidate')}
                   className={`flex-1 py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
                     activePersona === 'candidate'
                       ? 'bg-[var(--surface)] text-[var(--primary)] shadow-soft-sm'

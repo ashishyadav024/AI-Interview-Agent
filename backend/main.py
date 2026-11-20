@@ -158,6 +158,12 @@ async def api_health_check():
                 "mode": db_stats.get("mode", "resilient_store")
             },
             "llm": _GROQ_HEALTH
+        },
+        "environment_variables_configured": {
+            "MONGODB_URI": bool(os.getenv("MONGODB_URI") and not os.getenv("MONGODB_URI").startswith("mongodb://username:password")),
+            "GROQ_API_KEY": bool(os.getenv("GROQ_API_KEY") and not os.getenv("GROQ_API_KEY").startswith("gsk_your_")),
+            "JWT_SECRET": bool(os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY")),
+            "ALLOWED_ORIGINS": bool(os.getenv("ALLOWED_ORIGINS") or os.getenv("CORS_ORIGINS"))
         }
     }
 

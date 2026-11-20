@@ -97,8 +97,24 @@ class UserRepository:
                 logger.warning(f"User not found: {email}")
                 return None
             
-            # Verify password
-            if bcrypt.checkpw(password.encode('utf-8'), user['password']):
+            # Verify password (support bytes, str, and password_hash field)
+            raw_hash = user.get('password') or user.get('password_hash')
+            if not raw_hash:
+                logger.warning(f"No password hash found for user: {email}")
+                return None
+
+            if isinstance(raw_hash, str):
+                hash_bytes = raw_hash.encode('utf-8')
+            elif isinstance(raw_hash, bytes):
+                hash_bytes = raw_hash
+            else:
+                try:
+                    hash_bytes = bytes(raw_hash)
+                except Exception:
+                    logger.error(f"Unsupported password hash format for user: {email}")
+                    return None
+
+            if bcrypt.checkpw(password.encode('utf-8'), hash_bytes):
                 # Update last login
                 self.collection.update_one(
                     {"_id": user["_id"]},
@@ -107,6 +123,7 @@ class UserRepository:
                 
                 # Remove password from returned document
                 user.pop('password', None)
+                user.pop('password_hash', None)
                 user['_id'] = str(user['_id'])
                 
                 logger.info(f"✅ User authenticated: {email}")
